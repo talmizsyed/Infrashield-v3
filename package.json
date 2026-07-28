@@ -1,0 +1,37 @@
+{
+  "name": "infrashield-v3",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@8.8.0",
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "prepare": "husky install",
+    "format": "prettier --write .",
+    "check": "pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "husky": "^9.6.1",
+    "lint-staged": "^14.0.0",
+    "prettier": "^3.0.0",
+    "turbo": "^1.11.0",
+    "typescript": "^5.6.0",
+    "vitest": "^1.9.0"
+  },
+  "lint-staged": {
+    "**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "**/*.{md,json}": [
+      "prettier --write"
+    ]
+  }
+}

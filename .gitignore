@@ -1,0 +1,10 @@
+node_modules/
+.pnp.cjs
+.pnpm-debug.log*
+.DS_Store
+dist/
+coverage/
+.vscode/
+*.log
+.env
+.env.*
