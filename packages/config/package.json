@@ -8,5 +8,8 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "name": "@infrashield/config"
+  "name": "@infrashield/config",
+  "dependencies": {
+    "zod": "^3.0.0"
+  }
 }

@@ -10,6 +10,8 @@
   "types": "dist/index.d.ts",
   "name": "@infrashield/logger",
   "dependencies": {
-    "pino": "^9.0.0"
+    "@infrashield/shared": "workspace:*",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0"
   }
 }
