@@ -8,6 +8,10 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: /^@agentic\/([^/]+)(\/.*)?$/,
+        replacement: path.resolve(rootDir, 'packages/$1/src$2'),
+      },
+      {
         find: /^@infrashield\/(provider-[^/]+)(\/.*)?$/,
         replacement: path.resolve(rootDir, 'providers/$1/src$2'),
       },

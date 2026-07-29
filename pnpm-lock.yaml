@@ -134,15 +134,9 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@infrashield/agent-core':
+      '@agentic/sdk':
         specifier: workspace:*
-        version: link:../agent-core
-      '@infrashield/context':
-        specifier: workspace:*
-        version: link:../context
-      '@infrashield/contracts':
-        specifier: workspace:*
-        version: link:../contracts
+        version: link:../sdk
 
   packages/sdk:
     dependencies:

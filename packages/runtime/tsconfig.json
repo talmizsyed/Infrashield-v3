@@ -4,6 +4,6 @@
     "composite": true,
     "outDir": "dist"
   },
-  "references": [{ "path": "../contracts" }, { "path": "../context" }, { "path": "../agent-core" }],
+  "references": [{ "path": "../sdk" }],
   "include": ["src"]
 }

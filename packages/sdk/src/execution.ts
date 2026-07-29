@@ -83,3 +83,17 @@ export interface IAgentExecutor {
     context: IExecutionContext,
   ): Promise<IExecutionResult>;
 }
+
+/**
+ * Middleware contract for request/response pipeline composition.
+ */
+export interface IMiddleware {
+  readonly middlewareId: Identifier;
+  readonly name: string;
+  readonly description?: string;
+
+  execute(
+    context: IExecutionContext,
+    next: () => Promise<IExecutionResult>,
+  ): Promise<IExecutionResult>;
+}

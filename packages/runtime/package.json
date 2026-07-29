@@ -8,9 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@infrashield/contracts": "workspace:*",
-    "@infrashield/context": "workspace:*",
-    "@infrashield/agent-core": "workspace:*"
+    "@agentic/sdk": "workspace:*"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts"
