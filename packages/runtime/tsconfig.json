@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist"
+  },
+  "references": [{ "path": "../contracts" }, { "path": "../context" }, { "path": "../agent-core" }],
+  "include": ["src"]
+}

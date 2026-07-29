@@ -75,6 +75,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
 
+  packages/agent-core:
+    dependencies:
+      '@infrashield/context':
+        specifier: workspace:*
+        version: link:../context
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/ai-core: {}
 
   packages/ai-memory: {}
@@ -95,6 +104,23 @@ importers:
         specifier: ^3.0.0
         version: 3.25.76
 
+  packages/context:
+    dependencies:
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
+  packages/contracts: {}
+
+  packages/execution:
+    dependencies:
+      '@infrashield/context':
+        specifier: workspace:*
+        version: link:../context
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/logger:
     dependencies:
       '@infrashield/shared':
@@ -106,6 +132,18 @@ importers:
       pino-pretty:
         specifier: ^11.0.0
         version: 11.3.0
+
+  packages/runtime:
+    dependencies:
+      '@infrashield/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@infrashield/context':
+        specifier: workspace:*
+        version: link:../context
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/shared: {}
 
