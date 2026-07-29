@@ -18,6 +18,7 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
+      "@agentic/sdk": ["packages/sdk/dist/src/index", "packages/sdk/src/index"],
       "@infrashield/*": [
         "packages/*/dist/src/index",
         "providers/*/dist/src/index",

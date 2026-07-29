@@ -1,0 +1,16 @@
+{
+  "name": "@agentic/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@infrashield/contracts": "workspace:*",
+    "@infrashield/execution": "workspace:*"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}
