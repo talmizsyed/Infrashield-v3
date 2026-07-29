@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createHealthServer, isHealthEndpoint, HEALTH_ENDPOINTS } from './index';
+import { createHealthServer, getDefaultPort, isHealthEndpoint, HEALTH_ENDPOINTS } from './index';
 
 describe('shared package', () => {
   it('exports health constants', () => {

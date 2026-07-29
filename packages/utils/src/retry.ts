@@ -10,10 +10,7 @@ export type RetryOptions = {
 /**
  * Retries an asynchronous callback with configurable backoff.
  */
-export const retry = async <T>(
-  callback: () => Promise<T>,
-  options: RetryOptions,
-): Promise<T> => {
+export const retry = async <T>(callback: () => Promise<T>, options: RetryOptions): Promise<T> => {
   const attempts = Math.max(1, options.attempts);
   const delayMs = options.delayMs ?? 100;
   const factor = options.factor ?? 2;

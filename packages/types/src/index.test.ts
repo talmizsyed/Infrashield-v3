@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expectTypeOf, it } from 'vitest';
 import type { ApiResponse, HealthResponse, ErrorResponse, AiProviderRequest, UUID } from './index';
 
 describe('types package', () => {

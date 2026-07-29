@@ -13,7 +13,7 @@ export const compact = <T extends Record<string, unknown>>(obj: T): Partial<T> =
 /**
  * Merges shallow objects into a new object.
  */
-export const merge = <T extends Record<string, unknown>>(
-  base: T,
-  overrides: Partial<T>,
-): T => ({ ...base, ...overrides });
+export const merge = <T extends Record<string, unknown>>(base: T, overrides: Partial<T>): T => ({
+  ...base,
+  ...overrides,
+});

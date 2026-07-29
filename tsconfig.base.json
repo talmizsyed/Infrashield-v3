@@ -6,7 +6,6 @@
     "declaration": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": "src",
     "strict": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
@@ -16,6 +15,16 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitReturns": true,
     "noImplicitThis": true,
-    "noFallthroughCasesInSwitch": true
-  }
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@infrashield/*": [
+        "packages/*/dist/src/index",
+        "providers/*/dist/src/index",
+        "packages/*/src/index",
+        "providers/*/src/index"
+      ]
+    }
+  },
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }

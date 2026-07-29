@@ -3,9 +3,14 @@ import { loadConfig, isDevelopment, isProduction, isTest } from './index';
 
 describe('config package', () => {
   it('loads valid configuration', () => {
-    const config = loadConfig({ NODE_ENV: 'test', PORT: '4000', LOG_LEVEL: 'debug', CORRELATION_ID_HEADER: 'x-request-id' });
+    const config = loadConfig({
+      NODE_ENV: 'test',
+      PORT: '4000',
+      LOG_LEVEL: 'debug',
+      CORRELATION_ID_HEADER: 'x-request-id',
+    });
     expect(config.NODE_ENV).toBe('test');
-    expect(config.PORT).toBe('4000');
+    expect(config.PORT).toBe(4000);
     expect(config.LOG_LEVEL).toBe('debug');
   });
 

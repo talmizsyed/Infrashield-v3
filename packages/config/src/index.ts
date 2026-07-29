@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { appConfigSchema, Environment } from './schema';
+import { appConfigSchema } from './schema';
 
 /**
  * Parsed application configuration values.

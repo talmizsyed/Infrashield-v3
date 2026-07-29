@@ -1,10 +1,14 @@
 node_modules/
 .pnp.cjs
 .pnpm-debug.log*
+.pnpm-store/
 .DS_Store
 dist/
 coverage/
+.turbo/
 .vscode/
 *.log
+*.js.map
+*.tsbuildinfo
 .env
 .env.*

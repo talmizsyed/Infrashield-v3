@@ -7,7 +7,11 @@ export type LoggerConfig = {
   correlationId?: string;
 };
 
-const getTransport = (environment: string | undefined) =>
+const getTransport = (
+  environment: string | undefined,
+):
+  | { target: string; options: { colorize: boolean; translateTime: string; ignore: string } }
+  | undefined =>
   environment === 'development'
     ? {
         target: 'pino-pretty',
@@ -40,8 +44,9 @@ export const createLogger = (config: LoggerConfig = {}): Logger => {
 /**
  * Creates a child logger with additional bindings.
  */
-export const createChildLogger = (logger: Logger, bindings: Record<string, unknown>): Logger =>
-  logger.child(bindings);
+export function createChildLogger(logger: Logger, bindings: Record<string, unknown>): Logger {
+  return logger.child(bindings);
+}
 
 /**
  * Returns the default correlation header name.

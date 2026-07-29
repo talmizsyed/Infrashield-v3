@@ -2,13 +2,7 @@
  * Supported AI provider identifiers.
  */
 export type AiProviderName =
-  | 'anthropic'
-  | 'openai'
-  | 'gemini'
-  | 'kimi'
-  | 'deepseek'
-  | 'groq'
-  | 'ollama';
+  'anthropic' | 'openai' | 'gemini' | 'kimi' | 'deepseek' | 'groq' | 'ollama';
 
 /**
  * A configuration object that identifies an AI provider.

@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { HEALTH_ENDPOINTS, DEFAULT_PORT } from './constants';
+import { HEALTH_ENDPOINTS, DEFAULT_PORT, HealthEndpoint } from './constants';
 
 /**
  * Returns true when the provided path is a health check endpoint.
