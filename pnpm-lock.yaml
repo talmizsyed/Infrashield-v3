@@ -111,6 +111,8 @@ importers:
 
   packages/contracts: {}
 
+  packages/core-infrastructure: {}
+
   packages/execution:
     dependencies:
       '@infrashield/context':

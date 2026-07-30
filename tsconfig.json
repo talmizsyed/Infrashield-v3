@@ -3,6 +3,7 @@
   "files": [],
   "references": [
     { "path": "packages/shared" },
+    { "path": "packages/core-infrastructure" },
     { "path": "packages/config" },
     { "path": "packages/logger" },
     { "path": "packages/types" },
