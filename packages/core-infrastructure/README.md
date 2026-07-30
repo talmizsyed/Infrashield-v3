@@ -60,10 +60,64 @@ Resolution flow:
 2. For single-registration tokens, it resolves the descriptor directly.
 3. For multi-registration tokens, `ResolveAll` returns each matching instance in registration order.
 4. Singleton registrations are cached per provider instance.
-5. Transient registrations always create a new instance.
-6. Factory registrations receive the provider instance and may throw to signal resolution failure.
+5. Scoped registrations are cached per scope instance.
+6. Transient registrations always create a new instance.
+7. Factory registrations receive the provider instance and may throw to signal resolution failure.
 
-The provider emits `ResolutionException` for missing registrations, factory failures, invalid lifetime metadata, and duplicate registration conflicts during resolution.
+The provider emits `ResolutionException` for missing registrations, factory failures, invalid lifetime metadata, duplicate registration conflicts, and post-disposal usage during resolution.
+
+## Disposal Lifecycle
+
+Story 5.6 adds deterministic lifecycle ownership and disposal management to the provider and scope model.
+
+### Ownership Rules
+
+- Singleton services are owned by the root provider and are disposed once when the provider is disposed.
+- Scoped services are owned by their creating scope and are disposed when that scope is disposed.
+- Transient services are tracked by the owning container when they implement a disposable interface and are released during teardown.
+- Disposable services are disposed in reverse creation order for deterministic teardown.
+- Disposal is idempotent; repeated disposal calls are safe and do not corrupt lifecycle state.
+
+### Supported Disposal Contracts
+
+The container recognizes both synchronous and asynchronous contracts:
+
+- `IDisposable.dispose()`
+- `IAsyncDisposable.disposeAsync()`
+
+### Disposal Flow
+
+1. The provider or scope creates a `LifecycleManager` to track disposable instances.
+2. Each resolved service that implements a disposal contract is registered with the owning manager.
+3. Disposing the provider tears down singleton services and all child scopes.
+4. Disposing a scope tears down its scoped services and releases them in reverse order.
+5. Disposal failures are surfaced as `DependencyInjectionError` through the lifecycle pipeline.
+
+### Usage Example
+
+```ts
+import {
+  createInjectionToken,
+  ServiceCollection,
+  ServiceProvider,
+  type IDisposable,
+} from '@infrashield/core-infrastructure';
+
+class Resource implements IDisposable {
+  public dispose(): void {
+    // release native resources
+  }
+}
+
+const RESOURCE_TOKEN = createInjectionToken<Resource>('resource');
+const services = new ServiceCollection();
+services.AddSingleton(RESOURCE_TOKEN, () => new Resource());
+
+const provider = new ServiceProvider(services);
+const resource = provider.Resolve(RESOURCE_TOKEN);
+
+await provider.dispose();
+```
 
 ## Usage Examples
 
@@ -165,7 +219,8 @@ const allLoggers = provider.ResolveAll(LOGGER_TOKEN);
 - Validate and inspect registrations before handing metadata to provider construction logic.
 - Avoid duplicate equivalent registrations.
 - Prefer `ResolveRequired` for mandatory services and `TryResolve` for optional ones.
-- Keep the provider focused on deterministic object resolution; constructor injection belongs to a later story.
+- Keep the provider focused on deterministic object resolution and lifecycle ownership.
+- Implement disposal-aware services when the container should release external resources or subscriptions.
 
 ## Extension Guide
 

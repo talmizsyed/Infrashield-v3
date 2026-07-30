@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   createInjectionToken,
   DependencyRegistrationError,
+  type IDisposable,
+  type IAsyncDisposable,
   ResolutionException,
   ServiceCollection,
   ServiceDescriptor,
@@ -23,6 +25,34 @@ class TestImplementation extends TestService {
 class TestServiceWithId extends TestService {
   public constructor(public readonly id: string) {
     super();
+  }
+}
+
+class DisposableService implements IDisposable {
+  public constructor(public readonly name: string) {}
+
+  public disposed = false;
+
+  public dispose(): void {
+    this.disposed = true;
+  }
+}
+
+class AsyncDisposableService implements IAsyncDisposable {
+  public asyncDisposed = false;
+
+  public async disposeAsync(): Promise<void> {
+    this.asyncDisposed = true;
+  }
+}
+
+class TrackingDisposableService implements IDisposable {
+  public static order: string[] = [];
+
+  public constructor(public readonly name: string) {}
+
+  public dispose(): void {
+    TrackingDisposableService.order.push(this.name);
   }
 }
 
@@ -578,5 +608,123 @@ describe('service provider', () => {
     const unique = new Set(instances.map((instance) => instance.id));
 
     expect(unique.size).toBe(10);
+  });
+
+  it('disposes singleton services when the provider is disposed', async () => {
+    const token = createInjectionToken<DisposableService>('singleton-disposal');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new DisposableService('singleton'));
+
+    const provider = new ServiceProvider(collection);
+    const service = provider.Resolve(token);
+
+    await provider.dispose();
+
+    expect(service.disposed).toBe(true);
+  });
+
+  it('disposes scoped services when their scope is disposed', async () => {
+    const token = createInjectionToken<DisposableService>('scoped-disposal');
+    const collection = new ServiceCollection();
+    collection.AddScoped(token, () => new DisposableService('scoped'));
+
+    const provider = new ServiceProvider(collection);
+    const scope = provider.createScope();
+    const service = scope.resolve(token);
+
+    await scope.dispose();
+
+    expect(service.disposed).toBe(true);
+  });
+
+  it('disposes transient services when they are owned by the container', async () => {
+    const token = createInjectionToken<DisposableService>('transient-disposal');
+    const collection = new ServiceCollection();
+    collection.AddTransient(token, () => new DisposableService('transient'));
+
+    const provider = new ServiceProvider(collection);
+    const service = provider.Resolve(token);
+
+    await provider.dispose();
+
+    expect(service.disposed).toBe(true);
+  });
+
+  it('disposes disposable services in reverse-order', async () => {
+    const firstToken = createInjectionToken<TrackingDisposableService>('reverse-first');
+    const secondToken = createInjectionToken<TrackingDisposableService>('reverse-second');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(firstToken, () => new TrackingDisposableService('first'));
+    collection.AddSingleton(secondToken, () => new TrackingDisposableService('second'));
+
+    TrackingDisposableService.order = [];
+    const provider = new ServiceProvider(collection);
+    provider.Resolve(firstToken);
+    provider.Resolve(secondToken);
+
+    await provider.dispose();
+
+    expect(TrackingDisposableService.order).toEqual(['second', 'first']);
+  });
+
+  it('is safe to dispose the same scope or provider multiple times', async () => {
+    const token = createInjectionToken<DisposableService>('double-disposal');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new DisposableService('double'));
+
+    const provider = new ServiceProvider(collection);
+    provider.Resolve(token);
+
+    await expect(provider.dispose()).resolves.toBeUndefined();
+    await expect(provider.dispose()).resolves.toBeUndefined();
+  });
+
+  it('supports async disposal for services that implement disposeAsync', async () => {
+    const token = createInjectionToken<AsyncDisposableService>('async-disposal');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new AsyncDisposableService());
+
+    const provider = new ServiceProvider(collection);
+    const service = provider.Resolve(token);
+
+    await provider.dispose();
+
+    expect(service.asyncDisposed).toBe(true);
+  });
+
+  it('throws meaningful exceptions when resolving services after disposal', async () => {
+    const token = createInjectionToken<DisposableService>('post-disposal');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new DisposableService('post'));
+
+    const provider = new ServiceProvider(collection);
+    await provider.dispose();
+
+    expect(() => provider.Resolve(token)).toThrow(ResolutionException);
+  });
+
+  it('throws meaningful exceptions when resolving from a disposed scope', async () => {
+    const token = createInjectionToken<DisposableService>('disposed-scope');
+    const collection = new ServiceCollection();
+    collection.AddScoped(token, () => new DisposableService('scope'));
+
+    const provider = new ServiceProvider(collection);
+    const scope = provider.createScope();
+    await scope.dispose();
+
+    expect(() => scope.resolve(token)).toThrow(ResolutionException);
+  });
+
+  it('allows concurrent disposal without corrupting lifecycle state', async () => {
+    const token = createInjectionToken<DisposableService>('concurrent-disposal');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new DisposableService('concurrent'));
+
+    const provider = new ServiceProvider(collection);
+    provider.Resolve(token);
+
+    await expect(
+      Promise.all([provider.dispose(), provider.dispose(), provider.dispose()]),
+    ).resolves.toEqual([undefined, undefined, undefined]);
   });
 });

@@ -104,6 +104,177 @@ export interface IServiceProvider extends IServiceResolver, IServiceScopeFactory
 }
 
 /**
+ * Synchronous disposal contract for services managed by the DI lifecycle.
+ */
+export interface IDisposable {
+  dispose(): void;
+}
+
+/**
+ * Asynchronous disposal contract for services managed by the DI lifecycle.
+ */
+export interface IAsyncDisposable {
+  disposeAsync(): Promise<void>;
+}
+
+/**
+ * Lifecycle context for a disposable service instance.
+ */
+export class DisposalContext {
+  public constructor(
+    public readonly lifetime: ServiceLifetime,
+    public readonly owner: 'provider' | 'scope',
+    public readonly token?: symbol,
+    public readonly scopeId?: string,
+  ) {}
+}
+
+/**
+ * Tracks disposable services for deterministic disposal.
+ */
+export class DisposableTracker {
+  private readonly entries: Array<{
+    readonly context: DisposalContext;
+    readonly service: unknown;
+  }> = [];
+  private readonly tracked = new Set<unknown>();
+
+  public track(service: unknown, context: DisposalContext): void {
+    if (!this.canDispose(service)) {
+      return;
+    }
+
+    if (typeof service !== 'object' || service === null || this.tracked.has(service)) {
+      return;
+    }
+
+    this.entries.push({ context, service });
+    this.tracked.add(service);
+  }
+
+  public async disposeAll(): Promise<void> {
+    const disposer = new ServiceDisposer();
+    const failures: unknown[] = [];
+
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.entries[index];
+      if (!entry) {
+        continue;
+      }
+
+      try {
+        await disposer.dispose(entry.service);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new DependencyInjectionError(
+        'di.disposal_failed',
+        `One or more services failed to dispose during lifecycle teardown.`,
+      );
+    }
+  }
+
+  private canDispose(service: unknown): boolean {
+    if (!service || typeof service !== 'object') {
+      return false;
+    }
+
+    return (
+      typeof (service as Partial<IDisposable>).dispose === 'function' ||
+      typeof (service as Partial<IAsyncDisposable>).disposeAsync === 'function'
+    );
+  }
+}
+
+/**
+ * Disposes a service instance using the appropriate sync or async contract.
+ */
+export class ServiceDisposer {
+  public async dispose(service: unknown): Promise<void> {
+    if (!service || typeof service !== 'object') {
+      return;
+    }
+
+    const asyncDisposable = service as Partial<IAsyncDisposable>;
+    if (typeof asyncDisposable.disposeAsync === 'function') {
+      await asyncDisposable.disposeAsync();
+      return;
+    }
+
+    const disposable = service as Partial<IDisposable>;
+    if (typeof disposable.dispose === 'function') {
+      disposable.dispose();
+    }
+  }
+}
+
+/**
+ * A disposable collection used by lifecycle managers.
+ */
+export class DisposableCollection {
+  private readonly tracker = new DisposableTracker();
+
+  public track(service: unknown, context: DisposalContext): void {
+    this.tracker.track(service, context);
+  }
+
+  public async disposeAll(): Promise<void> {
+    await this.tracker.disposeAll();
+  }
+}
+
+/**
+ * Coordinates disposal for a provider or scope owner.
+ */
+export class LifecycleManager {
+  private readonly collection = new DisposableCollection();
+  private disposalPromise: Promise<void> | undefined;
+  private disposed = false;
+  private disposing = false;
+
+  public track(service: unknown, context: DisposalContext): void {
+    if (this.disposed || this.disposing) {
+      return;
+    }
+
+    this.collection.track(service, context);
+  }
+
+  public async disposeAsync(): Promise<void> {
+    if (this.disposalPromise) {
+      return this.disposalPromise;
+    }
+
+    if (this.disposed) {
+      return;
+    }
+
+    this.disposing = true;
+    this.disposalPromise = (async () => {
+      try {
+        await this.collection.disposeAll();
+      } finally {
+        this.disposed = true;
+        this.disposing = false;
+      }
+    })();
+
+    return this.disposalPromise;
+  }
+
+  public isDisposed(): boolean {
+    return this.disposed;
+  }
+
+  public isDisposing(): boolean {
+    return this.disposing;
+  }
+}
+
+/**
  * Duplicate registration diagnostic.
  */
 export interface DuplicateRegistration {
@@ -274,6 +445,7 @@ export class ScopeContext {
     public readonly provider: IServiceProvider,
     public readonly scopeId: string,
     public readonly parent?: ScopeContext,
+    public readonly lifecycleManager?: LifecycleManager,
   ) {}
 }
 
@@ -447,6 +619,10 @@ export class ServiceProvider implements IServiceProvider {
   private readonly scopeCache = new Map<string, ScopeContext>();
   private readonly scopeInstances = new Map<string, Map<IServiceDescriptor<unknown>, unknown>>();
   private readonly disposedScopes = new Set<string>();
+  private readonly lifecycleManager = new LifecycleManager();
+  private readonly scopeLifecycleManagers = new Map<string, LifecycleManager>();
+  private readonly childScopes = new Set<ServiceScope>();
+  private disposePromise: Promise<void> | undefined;
   private scopeCounter = 0;
 
   public constructor(private readonly collection: IServiceCollection) {
@@ -457,6 +633,7 @@ export class ServiceProvider implements IServiceProvider {
 
   public Resolve<TService>(token: InjectionToken<TService>): TService {
     assertResolutionToken(token, 'Resolve');
+    this.assertNotDisposed(token, 'resolve');
 
     const descriptors = this.findDescriptors(token);
     if (descriptors.length === 0) {
@@ -482,6 +659,7 @@ export class ServiceProvider implements IServiceProvider {
 
   public ResolveAll<TService>(token: InjectionToken<TService>): readonly TService[] {
     assertResolutionToken(token, 'ResolveAll');
+    this.assertNotDisposed(token, 'resolve');
 
     const descriptors = this.findDescriptors(token);
     if (descriptors.length === 0) {
@@ -522,18 +700,39 @@ export class ServiceProvider implements IServiceProvider {
   }
 
   public createScope(): IServiceScope {
+    this.assertNotDisposed(undefined, 'create a scope');
+
     const scopeId = this.createScopeId();
-    const context = new ScopeContext(this, scopeId);
+    const lifecycleManager = new LifecycleManager();
+    const context = new ScopeContext(this, scopeId, undefined, lifecycleManager);
     this.scopeCache.set(scopeId, context);
     this.scopeInstances.set(scopeId, new Map());
-    return new ServiceScope(this, context);
+    this.scopeLifecycleManagers.set(scopeId, lifecycleManager);
+    const scope = new ServiceScope(this, context);
+    this.childScopes.add(scope);
+    return scope;
   }
 
   public async dispose(): Promise<void> {
-    this.singletonCache.clear();
-    this.scopeInstances.clear();
-    this.scopeCache.clear();
-    this.disposedScopes.clear();
+    if (this.disposePromise) {
+      return this.disposePromise;
+    }
+
+    this.disposePromise = (async () => {
+      const childScopes = Array.from(this.childScopes).reverse();
+      for (const scope of childScopes) {
+        await scope.disposeCore();
+      }
+
+      await this.lifecycleManager.disposeAsync();
+      this.singletonCache.clear();
+      this.scopeInstances.clear();
+      this.scopeCache.clear();
+      this.disposedScopes.clear();
+      this.childScopes.clear();
+    })();
+
+    return this.disposePromise;
   }
 
   private resolveDescriptor<TService>(
@@ -556,6 +755,7 @@ export class ServiceProvider implements IServiceProvider {
       this.singletonCache.set(descriptor as IServiceDescriptor<unknown>, instance as unknown);
     }
 
+    this.trackDisposable(instance, descriptor.lifetime, token);
     return instance;
   }
 
@@ -582,7 +782,7 @@ export class ServiceProvider implements IServiceProvider {
       );
     }
 
-    if (this.disposedScopes.has(scopeContext.scopeId)) {
+    if (this.lifecycleManager.isDisposed() || this.disposedScopes.has(scopeContext.scopeId)) {
       throw new ResolutionException(
         `Cannot resolve scoped service from disposed scope ${scopeContext.scopeId}.`,
         scopeContext.scopeId as unknown as symbol,
@@ -606,6 +806,7 @@ export class ServiceProvider implements IServiceProvider {
     const context = new ResolutionContext(this, token, descriptor as IServiceDescriptor<unknown>);
     const instance = this.createInstance(descriptor, context);
     scopeMap.set(cacheKey, instance as unknown);
+    this.trackDisposable(instance, descriptor.lifetime, token, scopeContext.scopeId);
     return instance;
   }
 
@@ -615,12 +816,13 @@ export class ServiceProvider implements IServiceProvider {
 
   public disposeScope(scopeId: string): void {
     if (!this.scopeCache.has(scopeId)) {
-      throw new ResolutionException(`Scope ${scopeId} is not registered.`);
+      return;
     }
 
     this.disposedScopes.add(scopeId);
     this.scopeInstances.delete(scopeId);
     this.scopeCache.delete(scopeId);
+    this.scopeLifecycleManagers.delete(scopeId);
   }
 
   public isScopeDisposed(scopeId: string): boolean {
@@ -630,6 +832,45 @@ export class ServiceProvider implements IServiceProvider {
   public createScopeId(): string {
     this.scopeCounter += 1;
     return `scope-${this.scopeCounter}`;
+  }
+
+  public unregisterScope(scope: ServiceScope): void {
+    this.childScopes.delete(scope);
+  }
+
+  public isDisposed(): boolean {
+    return this.lifecycleManager.isDisposed();
+  }
+
+  private trackDisposable<TService>(
+    instance: TService,
+    lifetime: ServiceLifetime,
+    token: InjectionToken<TService>,
+    scopeId?: string,
+  ): void {
+    if (this.lifecycleManager.isDisposed() || this.lifecycleManager.isDisposing()) {
+      return;
+    }
+
+    const ownerManager = scopeId ? this.scopeLifecycleManagers.get(scopeId) : this.lifecycleManager;
+    if (!ownerManager) {
+      return;
+    }
+
+    const context = new DisposalContext(lifetime, scopeId ? 'scope' : 'provider', token, scopeId);
+    ownerManager.track(instance, context);
+  }
+
+  private assertNotDisposed<TService>(
+    token: InjectionToken<TService> | undefined,
+    operation: string,
+  ): void {
+    if (this.lifecycleManager.isDisposed() || this.lifecycleManager.isDisposing()) {
+      throw new ResolutionException(
+        `Cannot ${operation} after the provider has been disposed.`,
+        token,
+      );
+    }
   }
 
   private createInstance<TService>(
@@ -736,16 +977,33 @@ export class ServiceScope implements IServiceScope {
   }
 
   public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
-    return this.provider.TryResolve(token);
+    try {
+      return this.resolve(token);
+    } catch {
+      return undefined;
+    }
   }
 
   public TryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
-    return this.provider.TryResolve(token);
+    return this.tryResolve(token);
   }
 
   public async dispose(): Promise<void> {
+    await this.disposeCore();
+  }
+
+  public async disposeCore(): Promise<void> {
+    if ((this.provider as ServiceProvider).isDisposed()) {
+      return;
+    }
+
     (this.provider as ServiceProvider).disposeScope(this.context.scopeId);
-    return Promise.resolve();
+    (this.provider as ServiceProvider).unregisterScope(this);
+    const lifecycleManager = this.context.lifecycleManager;
+    if (lifecycleManager) {
+      await lifecycleManager.disposeAsync();
+    }
+    await Promise.resolve();
   }
 }
 
