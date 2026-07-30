@@ -79,6 +79,7 @@ export interface IServiceScopeFactory {
 export interface IServiceResolver {
   resolve<TService>(token: InjectionToken<TService>): TService;
   tryResolve<TService>(token: InjectionToken<TService>): TService | undefined;
+  TryResolve<TService>(token: InjectionToken<TService>): TService | undefined;
 }
 
 /**
@@ -232,6 +233,237 @@ export class DependencyRegistrationError extends DependencyInjectionError {
   public constructor(message: string) {
     super('di.registration_invalid', message);
     this.name = 'DependencyRegistrationError';
+  }
+}
+
+/**
+ * Exception raised when a service cannot be resolved.
+ */
+export class ResolutionException extends DependencyInjectionError {
+  public readonly token?: symbol;
+
+  public constructor(message: string, token?: symbol, cause?: unknown) {
+    super('di.resolution_failed', message);
+    this.name = 'ResolutionException';
+    this.token = token;
+    if (cause) {
+      this.cause = cause;
+    }
+  }
+
+  public readonly cause?: unknown;
+}
+
+/**
+ * Resolution context passed to service factories and resolution helpers.
+ */
+export class ResolutionContext {
+  public constructor(
+    public readonly provider: IServiceProvider,
+    public readonly token: symbol,
+    public readonly descriptor: IServiceDescriptor<unknown>,
+  ) {}
+}
+
+/**
+ * Lightweight resolver facade that delegates to a provider.
+ */
+export class ServiceResolver implements IServiceResolver {
+  public constructor(private readonly provider: IServiceProvider) {}
+
+  public resolve<TService>(token: InjectionToken<TService>): TService {
+    return this.provider.Resolve(token);
+  }
+
+  public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
+    return this.provider.TryResolve(token);
+  }
+
+  public TryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
+    return this.provider.TryResolve(token);
+  }
+}
+
+/**
+ * In-memory implementation of the DI provider.
+ */
+export class ServiceProvider implements IServiceProvider {
+  private readonly singletonCache = new Map<IServiceDescriptor<unknown>, unknown>();
+
+  public constructor(private readonly collection: IServiceCollection) {
+    if (!collection || typeof collection !== 'object') {
+      throw new ResolutionException('Service provider requires a service collection instance.');
+    }
+  }
+
+  public Resolve<TService>(token: InjectionToken<TService>): TService {
+    assertResolutionToken(token, 'Resolve');
+
+    const descriptors = this.findDescriptors(token);
+    if (descriptors.length === 0) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    if (descriptors.length > 1) {
+      throw new ResolutionException(
+        `Multiple service registrations found for ${describeToken(token)}. ResolveAll should be used for multi-registration tokens.`,
+        token,
+      );
+    }
+
+    return this.resolveDescriptor<TService>(descriptors[0] as IServiceDescriptor<TService>, token);
+  }
+
+  public ResolveRequired<TService>(token: InjectionToken<TService>): TService {
+    return this.Resolve(token);
+  }
+
+  public ResolveAll<TService>(token: InjectionToken<TService>): readonly TService[] {
+    assertResolutionToken(token, 'ResolveAll');
+
+    const descriptors = this.findDescriptors(token);
+    if (descriptors.length === 0) {
+      return [];
+    }
+
+    return descriptors.map((descriptor) =>
+      this.resolveDescriptor<TService>(descriptor as IServiceDescriptor<TService>, token),
+    );
+  }
+
+  public resolve<TService>(token: InjectionToken<TService>): TService {
+    return this.Resolve(token);
+  }
+
+  public resolveRequired<TService>(token: InjectionToken<TService>): TService {
+    return this.ResolveRequired(token);
+  }
+
+  public resolveAll<TService>(token: InjectionToken<TService>): readonly TService[] {
+    return this.ResolveAll(token);
+  }
+
+  public TryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
+    try {
+      return this.Resolve(token);
+    } catch (error) {
+      if (error instanceof ResolutionException) {
+        return undefined;
+      }
+
+      throw error;
+    }
+  }
+
+  public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
+    return this.TryResolve(token);
+  }
+
+  public createScope(): IServiceScope {
+    return new ServiceScope(this);
+  }
+
+  public async dispose(): Promise<void> {
+    this.singletonCache.clear();
+  }
+
+  private resolveDescriptor<TService>(
+    descriptor: IServiceDescriptor<TService>,
+    token: InjectionToken<TService>,
+  ): TService {
+    this.assertLifetime(descriptor, token);
+
+    if (descriptor.lifetime === ServiceLifetime.Singleton) {
+      const cached = this.singletonCache.get(descriptor as IServiceDescriptor<unknown>);
+      if (cached !== undefined) {
+        return cached as TService;
+      }
+    }
+
+    const context = new ResolutionContext(this, token, descriptor as IServiceDescriptor<unknown>);
+    const instance = this.createInstance(descriptor, context);
+
+    if (descriptor.lifetime === ServiceLifetime.Singleton) {
+      this.singletonCache.set(descriptor as IServiceDescriptor<unknown>, instance as unknown);
+    }
+
+    return instance;
+  }
+
+  private createInstance<TService>(
+    descriptor: IServiceDescriptor<TService>,
+    context: ResolutionContext,
+  ): TService {
+    const registration = descriptor.registration;
+
+    switch (registration.kind) {
+      case 'factory': {
+        try {
+          return registration.factory(this);
+        } catch (error) {
+          throw new ResolutionException(
+            `Factory registration failed for ${describeToken(context.token)}.`,
+            context.token,
+            error,
+          );
+        }
+      }
+      case 'instance':
+        return registration.instance as TService;
+      case 'type': {
+        const implementationType = registration.type as unknown as new () => TService;
+        return new implementationType();
+      }
+      case 'self':
+        throw new ResolutionException(
+          `Self registration for ${describeToken(context.token)} cannot be resolved without an explicit implementation.`,
+          context.token,
+        );
+      default:
+        throw new ResolutionException(
+          `Unknown registration kind for ${describeToken(context.token)}.`,
+          context.token,
+        );
+    }
+  }
+
+  private findDescriptors(token: symbol): readonly IServiceDescriptor<unknown>[] {
+    return this.collection.Enumerate().filter((descriptor) => descriptor.token === token);
+  }
+
+  private assertLifetime<TService>(descriptor: IServiceDescriptor<TService>, token: symbol): void {
+    if (!Object.values(ServiceLifetime).includes(descriptor.lifetime)) {
+      throw new ResolutionException(
+        `Descriptor lifetime '${String(descriptor.lifetime)}' is invalid for ${describeToken(token)}.`,
+        token,
+      );
+    }
+  }
+}
+
+/**
+ * Scope wrapper for provider-based resolution.
+ */
+export class ServiceScope implements IServiceScope {
+  public constructor(public readonly provider: IServiceProvider) {}
+
+  public resolve<TService>(token: InjectionToken<TService>): TService {
+    return this.provider.Resolve(token);
+  }
+
+  public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
+    return this.provider.TryResolve(token);
+  }
+
+  public TryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
+    return this.provider.TryResolve(token);
+  }
+
+  public async dispose(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -718,6 +950,12 @@ function assertDescriptor<TService>(descriptor: IServiceDescriptor<TService>): v
 function assertToken(token: symbol, operation: string): void {
   if (typeof token !== 'symbol') {
     throw new DependencyRegistrationError(`${operation} requires a valid symbol token.`);
+  }
+}
+
+function assertResolutionToken(token: symbol, operation: string): void {
+  if (typeof token !== 'symbol') {
+    throw new ResolutionException(`${operation} requires a valid symbol token.`);
   }
 }
 

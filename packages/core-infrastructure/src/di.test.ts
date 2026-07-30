@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createInjectionToken,
   DependencyRegistrationError,
+  ResolutionException,
   ServiceCollection,
   ServiceDescriptor,
   ServiceLifetime,
+  ServiceProvider,
   type ServiceFactory,
 } from './di';
 
@@ -210,5 +212,124 @@ describe('service collection', () => {
     collection.AddSingleton(token, factory);
 
     expect(() => collection.AddSingleton(token, factory)).toThrow(DependencyRegistrationError);
+  });
+});
+
+describe('service provider', () => {
+  it('resolves singleton registrations once per provider', () => {
+    const token = createInjectionToken<TestService>('provider-singleton');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+    const first = provider.Resolve(token);
+    const second = provider.Resolve(token);
+
+    expect(first).toBeInstanceOf(TestService);
+    expect(first).toBe(second);
+  });
+
+  it('resolves transient registrations as new instances', () => {
+    const token = createInjectionToken<TestService>('provider-transient');
+    const collection = new ServiceCollection();
+    collection.AddTransient(token, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+    const first = provider.Resolve(token);
+    const second = provider.Resolve(token);
+
+    expect(first).not.toBe(second);
+  });
+
+  it('resolves instance registrations directly', () => {
+    const token = createInjectionToken<TestService>('provider-instance');
+    const collection = new ServiceCollection();
+    const instance = new TestService();
+    collection.AddInstance(token, instance);
+
+    const provider = new ServiceProvider(collection);
+
+    expect(provider.Resolve(token)).toBe(instance);
+  });
+
+  it('invokes factory registrations with the provider', () => {
+    const token = createInjectionToken<TestService>('provider-factory');
+    const collection = new ServiceCollection();
+    const provider = new ServiceProvider(collection);
+
+    let factoryCalls = 0;
+    collection.AddSingleton(token, (serviceProvider) => {
+      factoryCalls += 1;
+      expect(serviceProvider).toBe(provider);
+      return new TestService();
+    });
+
+    const resolved = provider.Resolve(token);
+
+    expect(resolved).toBeInstanceOf(TestService);
+    expect(factoryCalls).toBe(1);
+  });
+
+  it('resolves all registrations for a token in registration order', () => {
+    const token = createInjectionToken<TestService>('provider-all');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new TestService());
+    collection.AddTransient(token, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+    const resolved = provider.ResolveAll(token);
+
+    expect(resolved).toHaveLength(2);
+    expect(resolved[0]).toBeInstanceOf(TestService);
+    expect(resolved[1]).toBeInstanceOf(TestService);
+  });
+
+  it('supports required and optional resolve operations', () => {
+    const token = createInjectionToken<TestService>('provider-required');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+
+    expect(provider.ResolveRequired(token)).toBeInstanceOf(TestService);
+    expect(provider.TryResolve(createInjectionToken<TestService>('missing'))).toBeUndefined();
+  });
+
+  it('throws meaningful errors for missing, duplicate, invalid lifetime, and factory failures', () => {
+    const missingToken = createInjectionToken<TestService>('missing');
+    const duplicateToken = createInjectionToken<TestService>('duplicate');
+    const invalidToken = createInjectionToken<TestService>('invalid');
+    const factoryToken = createInjectionToken<TestService>('factory-failure');
+    const collection = new ServiceCollection();
+
+    collection.AddSingleton(duplicateToken, () => new TestService());
+    collection.AddTransient(duplicateToken, () => new TestService());
+    collection.AddSingleton(factoryToken, () => {
+      throw new Error('boom');
+    });
+
+    const provider = new ServiceProvider(collection);
+
+    expect(() => provider.Resolve(missingToken)).toThrow(ResolutionException);
+    expect(() => provider.Resolve(duplicateToken)).toThrow(ResolutionException);
+    expect(() => provider.Resolve(invalidToken)).toThrow(ResolutionException);
+    expect(() => provider.Resolve(factoryToken)).toThrow(ResolutionException);
+  });
+
+  it('caches singleton resolutions across repeated calls', () => {
+    const token = createInjectionToken<TestService>('provider-thread-safe');
+    const collection = new ServiceCollection();
+    let factoryCalls = 0;
+
+    collection.AddSingleton(token, () => {
+      factoryCalls += 1;
+      return new TestService();
+    });
+
+    const provider = new ServiceProvider(collection);
+    const results = Array.from({ length: 25 }, () => provider.Resolve(token));
+
+    expect(factoryCalls).toBe(1);
+    expect(new Set(results).size).toBe(1);
   });
 });
