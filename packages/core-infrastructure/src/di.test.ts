@@ -20,6 +20,12 @@ class TestImplementation extends TestService {
   public readonly implementationId = 'impl';
 }
 
+class TestServiceWithId extends TestService {
+  public constructor(public readonly id: string) {
+    super();
+  }
+}
+
 class LeafDependency {
   public readonly id = 'leaf';
 }
@@ -487,5 +493,90 @@ describe('service provider', () => {
     const consumer = provider.Resolve(consumerToken);
 
     expect(consumer.dependency).toBeInstanceOf(RootDependency);
+  });
+
+  it('creates scoped services that are isolated per scope', () => {
+    const token = createInjectionToken<TestService>('scope-scoped');
+    const collection = new ServiceCollection();
+    collection.AddScoped(token, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+    const firstScope = provider.createScope();
+    const secondScope = provider.createScope();
+
+    const firstResolved = firstScope.resolve(token);
+    const sameInFirstScope = firstScope.resolve(token);
+    const secondResolved = secondScope.resolve(token);
+
+    expect(firstResolved).toBe(sameInFirstScope);
+    expect(firstResolved).not.toBe(secondResolved);
+  });
+
+  it('shares singleton services across scopes and resolves transient services anew', () => {
+    const singletonToken = createInjectionToken<TestService>('scope-singleton');
+    const transientToken = createInjectionToken<TestService>('scope-transient');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(singletonToken, () => new TestService());
+    collection.AddTransient(transientToken, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+    const firstScope = provider.createScope();
+    const secondScope = provider.createScope();
+
+    const sharedFirst = firstScope.resolve(singletonToken);
+    const sharedSecond = secondScope.resolve(singletonToken);
+    const transientFirst = firstScope.resolve(transientToken);
+    const transientSecond = secondScope.resolve(transientToken);
+
+    expect(sharedFirst).toBe(sharedSecond);
+    expect(transientFirst).not.toBe(transientSecond);
+  });
+
+  it('supports nested scopes and disposal semantics', () => {
+    const token = createInjectionToken<TestService>('nested-scope');
+    const collection = new ServiceCollection();
+    collection.AddScoped(token, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+    const parentScope = provider.createScope();
+    const childScope = provider.createScope();
+
+    const parentResolved = parentScope.resolve(token);
+    const childResolved = childScope.resolve(token);
+
+    expect(parentResolved).not.toBe(childResolved);
+
+    void childScope.dispose();
+
+    expect(() => childScope.resolve(token)).toThrow(ResolutionException);
+  });
+
+  it('prevents resolution after a scope is disposed', () => {
+    const token = createInjectionToken<TestService>('disposed-scope');
+    const collection = new ServiceCollection();
+    collection.AddScoped(token, () => new TestService());
+
+    const provider = new ServiceProvider(collection);
+    const scope = provider.createScope();
+    void scope.dispose();
+
+    expect(() => scope.resolve(token)).toThrow(ResolutionException);
+  });
+
+  it('creates scopes concurrently without corrupting the cache', async () => {
+    const token = createInjectionToken<TestService>('concurrent-scope');
+    const collection = new ServiceCollection();
+    let counter = 0;
+    collection.AddScoped(token, () => new TestServiceWithId(++counter));
+
+    const provider = new ServiceProvider(collection);
+    const scopes = await Promise.all(
+      Array.from({ length: 10 }, () => Promise.resolve(provider.createScope())),
+    );
+
+    const instances = scopes.map((scope) => scope.resolve(token));
+    const unique = new Set(instances.map((instance) => instance.id));
+
+    expect(unique.size).toBe(10);
   });
 });

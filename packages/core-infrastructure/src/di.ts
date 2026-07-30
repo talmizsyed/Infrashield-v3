@@ -267,6 +267,17 @@ export class ResolutionContext {
 }
 
 /**
+ * Scope context passed to scoped resolution flows.
+ */
+export class ScopeContext {
+  public constructor(
+    public readonly provider: IServiceProvider,
+    public readonly scopeId: string,
+    public readonly parent?: ScopeContext,
+  ) {}
+}
+
+/**
  * Constructor dependency metadata selection helper.
  */
 export class ConstructorSelection {
@@ -433,6 +444,10 @@ export class ServiceResolver implements IServiceResolver {
  */
 export class ServiceProvider implements IServiceProvider {
   private readonly singletonCache = new Map<IServiceDescriptor<unknown>, unknown>();
+  private readonly scopeCache = new Map<string, ScopeContext>();
+  private readonly scopeInstances = new Map<string, Map<IServiceDescriptor<unknown>, unknown>>();
+  private readonly disposedScopes = new Set<string>();
+  private scopeCounter = 0;
 
   public constructor(private readonly collection: IServiceCollection) {
     if (!collection || typeof collection !== 'object') {
@@ -507,11 +522,18 @@ export class ServiceProvider implements IServiceProvider {
   }
 
   public createScope(): IServiceScope {
-    return new ServiceScope(this);
+    const scopeId = this.createScopeId();
+    const context = new ScopeContext(this, scopeId);
+    this.scopeCache.set(scopeId, context);
+    this.scopeInstances.set(scopeId, new Map());
+    return new ServiceScope(this, context);
   }
 
   public async dispose(): Promise<void> {
     this.singletonCache.clear();
+    this.scopeInstances.clear();
+    this.scopeCache.clear();
+    this.disposedScopes.clear();
   }
 
   private resolveDescriptor<TService>(
@@ -535,6 +557,79 @@ export class ServiceProvider implements IServiceProvider {
     }
 
     return instance;
+  }
+
+  public resolveInScope<TService>(
+    descriptor: IServiceDescriptor<TService>,
+    token: InjectionToken<TService>,
+    scopeContext?: ScopeContext,
+  ): TService {
+    this.assertLifetime(descriptor, token);
+
+    if (descriptor.lifetime === ServiceLifetime.Singleton) {
+      return this.resolveDescriptor(descriptor, token);
+    }
+
+    if (descriptor.lifetime === ServiceLifetime.Transient) {
+      const context = new ResolutionContext(this, token, descriptor as IServiceDescriptor<unknown>);
+      return this.createInstance(descriptor, context);
+    }
+
+    if (!scopeContext) {
+      throw new ResolutionException(
+        `Scoped services require a valid scope context for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    if (this.disposedScopes.has(scopeContext.scopeId)) {
+      throw new ResolutionException(
+        `Cannot resolve scoped service from disposed scope ${scopeContext.scopeId}.`,
+        scopeContext.scopeId as unknown as symbol,
+      );
+    }
+
+    const scopeMap = this.scopeInstances.get(scopeContext.scopeId);
+    if (!scopeMap) {
+      throw new ResolutionException(
+        `Scope ${scopeContext.scopeId} has not been initialized.`,
+        token,
+      );
+    }
+
+    const cacheKey = descriptor as IServiceDescriptor<unknown>;
+    const cached = scopeMap.get(cacheKey);
+    if (cached !== undefined) {
+      return cached as TService;
+    }
+
+    const context = new ResolutionContext(this, token, descriptor as IServiceDescriptor<unknown>);
+    const instance = this.createInstance(descriptor, context);
+    scopeMap.set(cacheKey, instance as unknown);
+    return instance;
+  }
+
+  public getScopeContext(scopeId: string): ScopeContext | undefined {
+    return this.scopeCache.get(scopeId);
+  }
+
+  public disposeScope(scopeId: string): void {
+    if (!this.scopeCache.has(scopeId)) {
+      throw new ResolutionException(`Scope ${scopeId} is not registered.`);
+    }
+
+    this.disposedScopes.add(scopeId);
+    this.scopeInstances.delete(scopeId);
+    this.scopeCache.delete(scopeId);
+  }
+
+  public isScopeDisposed(scopeId: string): boolean {
+    return this.disposedScopes.has(scopeId);
+  }
+
+  public createScopeId(): string {
+    this.scopeCounter += 1;
+    return `scope-${this.scopeCounter}`;
   }
 
   private createInstance<TService>(
@@ -608,10 +703,36 @@ export class ServiceProvider implements IServiceProvider {
  * Scope wrapper for provider-based resolution.
  */
 export class ServiceScope implements IServiceScope {
-  public constructor(public readonly provider: IServiceProvider) {}
+  public constructor(
+    public readonly provider: IServiceProvider,
+    public readonly context: ScopeContext,
+  ) {}
 
   public resolve<TService>(token: InjectionToken<TService>): TService {
-    return this.provider.Resolve(token);
+    const descriptors = (this.provider as ServiceProvider).findDescriptors(token);
+    if (descriptors.length === 0) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    if (descriptors.length > 1) {
+      throw new ResolutionException(
+        `Multiple service registrations found for ${describeToken(token)}. ResolveAll should be used for multi-registration tokens.`,
+        token,
+      );
+    }
+
+    const descriptor = descriptors[0] as IServiceDescriptor<TService>;
+    if (!descriptor) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    return (this.provider as ServiceProvider).resolveInScope(descriptor, token, this.context);
   }
 
   public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
@@ -623,7 +744,51 @@ export class ServiceScope implements IServiceScope {
   }
 
   public async dispose(): Promise<void> {
+    (this.provider as ServiceProvider).disposeScope(this.context.scopeId);
     return Promise.resolve();
+  }
+}
+
+/**
+ * Scope factory implementation.
+ */
+export class ServiceScopeFactory implements IServiceScopeFactory {
+  public constructor(private readonly provider: ServiceProvider) {}
+
+  public createScope(): IServiceScope {
+    return this.provider.createScope();
+  }
+}
+
+/**
+ * Scoped provider implementation that resolves through a scope context.
+ */
+export class ScopedServiceProvider extends ServiceProvider {
+  public constructor(
+    collection: IServiceCollection,
+    private readonly scopeContext: ScopeContext,
+  ) {
+    super(collection);
+  }
+
+  public override Resolve<TService>(token: InjectionToken<TService>): TService {
+    const descriptors = this.findDescriptors(token);
+    if (descriptors.length === 0) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    const descriptor = descriptors[0] as IServiceDescriptor<TService>;
+    if (!descriptor) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    return this.resolveInScope(descriptor, token, this.scopeContext);
   }
 }
 
