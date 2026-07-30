@@ -427,6 +427,78 @@ export class ResolutionException extends DependencyInjectionError {
 }
 
 /**
+ * Raised when dependency validation detects a circular dependency.
+ */
+export class CircularDependencyException extends ResolutionException {
+  public constructor(
+    message: string,
+    public readonly path: ResolutionPath,
+    token?: symbol,
+  ) {
+    super(message, token);
+    this.name = 'CircularDependencyException';
+  }
+}
+
+/**
+ * Raised when dependency validation detects invalid registration or constructor metadata.
+ */
+export class ValidationException extends DependencyInjectionError {
+  public constructor(
+    message: string,
+    public readonly token?: symbol,
+  ) {
+    super('di.validation_failed', message);
+    this.name = 'ValidationException';
+  }
+}
+
+/**
+ * A single step in a dependency resolution path.
+ */
+export class ResolutionPath {
+  public constructor(public readonly steps: readonly symbol[]) {}
+
+  public append(step: symbol): ResolutionPath {
+    return new ResolutionPath([...this.steps, step]);
+  }
+
+  public toString(): string {
+    return this.steps.map((step) => describeToken(step)).join(' -> ');
+  }
+}
+
+/**
+ * Tracks the current dependency resolution stack for a single request.
+ */
+export class ResolutionStack {
+  private readonly stack: symbol[] = [];
+
+  public push(token: symbol): void {
+    if (this.stack.includes(token)) {
+      throw new CircularDependencyException(
+        `Circular dependency detected while resolving ${describeToken(token)}.`,
+        new ResolutionPath([...this.stack, token]),
+        token,
+      );
+    }
+
+    this.stack.push(token);
+  }
+
+  public pop(token: symbol): void {
+    const index = this.stack.lastIndexOf(token);
+    if (index >= 0) {
+      this.stack.splice(index, 1);
+    }
+  }
+
+  public currentPath(): ResolutionPath {
+    return new ResolutionPath([...this.stack]);
+  }
+}
+
+/**
  * Resolution context passed to service factories and resolution helpers.
  */
 export class ResolutionContext {
@@ -434,6 +506,7 @@ export class ResolutionContext {
     public readonly provider: IServiceProvider,
     public readonly token: symbol,
     public readonly descriptor: IServiceDescriptor<unknown>,
+    public readonly scopeContext?: ScopeContext,
   ) {}
 }
 
@@ -634,23 +707,7 @@ export class ServiceProvider implements IServiceProvider {
   public Resolve<TService>(token: InjectionToken<TService>): TService {
     assertResolutionToken(token, 'Resolve');
     this.assertNotDisposed(token, 'resolve');
-
-    const descriptors = this.findDescriptors(token);
-    if (descriptors.length === 0) {
-      throw new ResolutionException(
-        `No service registration found for ${describeToken(token)}.`,
-        token,
-      );
-    }
-
-    if (descriptors.length > 1) {
-      throw new ResolutionException(
-        `Multiple service registrations found for ${describeToken(token)}. ResolveAll should be used for multi-registration tokens.`,
-        token,
-      );
-    }
-
-    return this.resolveDescriptor<TService>(descriptors[0] as IServiceDescriptor<TService>, token);
+    return this.resolveWithStack(token, new ResolutionStack(), undefined);
   }
 
   public ResolveRequired<TService>(token: InjectionToken<TService>): TService {
@@ -667,7 +724,12 @@ export class ServiceProvider implements IServiceProvider {
     }
 
     return descriptors.map((descriptor) =>
-      this.resolveDescriptor<TService>(descriptor as IServiceDescriptor<TService>, token),
+      this.resolveDescriptor<TService>(
+        descriptor as IServiceDescriptor<TService>,
+        token,
+        new ResolutionStack(),
+        undefined,
+      ),
     );
   }
 
@@ -735,9 +797,44 @@ export class ServiceProvider implements IServiceProvider {
     return this.disposePromise;
   }
 
+  private resolveWithStack<TService>(
+    token: InjectionToken<TService>,
+    stack: ResolutionStack,
+    scopeContext?: ScopeContext,
+  ): TService {
+    const descriptors = this.findDescriptors(token);
+    if (descriptors.length === 0) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    if (descriptors.length > 1) {
+      throw new ResolutionException(
+        `Multiple service registrations found for ${describeToken(token)}. ResolveAll should be used for multi-registration tokens.`,
+        token,
+      );
+    }
+
+    stack.push(token);
+    try {
+      return this.resolveDescriptor<TService>(
+        descriptors[0] as IServiceDescriptor<TService>,
+        token,
+        stack,
+        scopeContext,
+      );
+    } finally {
+      stack.pop(token);
+    }
+  }
+
   private resolveDescriptor<TService>(
     descriptor: IServiceDescriptor<TService>,
     token: InjectionToken<TService>,
+    stack: ResolutionStack,
+    scopeContext?: ScopeContext,
   ): TService {
     this.assertLifetime(descriptor, token);
 
@@ -748,8 +845,24 @@ export class ServiceProvider implements IServiceProvider {
       }
     }
 
-    const context = new ResolutionContext(this, token, descriptor as IServiceDescriptor<unknown>);
-    const instance = this.createInstance(descriptor, context);
+    if (descriptor.lifetime === ServiceLifetime.Scoped) {
+      if (!scopeContext) {
+        throw new ResolutionException(
+          `Scoped services require a valid scope context for ${describeToken(token)}.`,
+          token,
+        );
+      }
+
+      return this.resolveInScope(descriptor, token, scopeContext, stack);
+    }
+
+    const context = new ResolutionContext(
+      this,
+      token,
+      descriptor as IServiceDescriptor<unknown>,
+      scopeContext,
+    );
+    const instance = this.createInstance(descriptor, context, stack, scopeContext);
 
     if (descriptor.lifetime === ServiceLifetime.Singleton) {
       this.singletonCache.set(descriptor as IServiceDescriptor<unknown>, instance as unknown);
@@ -763,16 +876,27 @@ export class ServiceProvider implements IServiceProvider {
     descriptor: IServiceDescriptor<TService>,
     token: InjectionToken<TService>,
     scopeContext?: ScopeContext,
+    stack?: ResolutionStack,
   ): TService {
     this.assertLifetime(descriptor, token);
 
     if (descriptor.lifetime === ServiceLifetime.Singleton) {
-      return this.resolveDescriptor(descriptor, token);
+      return this.resolveDescriptor(
+        descriptor,
+        token,
+        stack ?? new ResolutionStack(),
+        scopeContext,
+      );
     }
 
     if (descriptor.lifetime === ServiceLifetime.Transient) {
-      const context = new ResolutionContext(this, token, descriptor as IServiceDescriptor<unknown>);
-      return this.createInstance(descriptor, context);
+      const context = new ResolutionContext(
+        this,
+        token,
+        descriptor as IServiceDescriptor<unknown>,
+        scopeContext,
+      );
+      return this.createInstance(descriptor, context, stack ?? new ResolutionStack(), scopeContext);
     }
 
     if (!scopeContext) {
@@ -803,8 +927,18 @@ export class ServiceProvider implements IServiceProvider {
       return cached as TService;
     }
 
-    const context = new ResolutionContext(this, token, descriptor as IServiceDescriptor<unknown>);
-    const instance = this.createInstance(descriptor, context);
+    const context = new ResolutionContext(
+      this,
+      token,
+      descriptor as IServiceDescriptor<unknown>,
+      scopeContext,
+    );
+    const instance = this.createInstance(
+      descriptor,
+      context,
+      stack ?? new ResolutionStack(),
+      scopeContext,
+    );
     scopeMap.set(cacheKey, instance as unknown);
     this.trackDisposable(instance, descriptor.lifetime, token, scopeContext.scopeId);
     return instance;
@@ -876,6 +1010,8 @@ export class ServiceProvider implements IServiceProvider {
   private createInstance<TService>(
     descriptor: IServiceDescriptor<TService>,
     context: ResolutionContext,
+    stack: ResolutionStack,
+    scopeContext?: ScopeContext,
   ): TService {
     const registration = descriptor.registration;
 
@@ -895,7 +1031,12 @@ export class ServiceProvider implements IServiceProvider {
         return registration.instance as TService;
       case 'type': {
         const implementationType = registration.type as ServiceType<TService>;
-        return this.resolveConstructor<TService>(implementationType, context.token);
+        return this.resolveConstructor<TService>(
+          implementationType,
+          context.token,
+          stack,
+          scopeContext,
+        );
       }
       case 'self':
         throw new ResolutionException(
@@ -913,12 +1054,39 @@ export class ServiceProvider implements IServiceProvider {
   private resolveConstructor<TService>(
     implementationType: ServiceType<TService>,
     token: InjectionToken<TService>,
+    stack: ResolutionStack,
+    scopeContext?: ScopeContext,
   ): TService {
     const resolver = new ConstructorResolver();
-    const selection = resolver.selectConstructor(implementationType, token);
+    let selection: ConstructorSelection;
+
+    try {
+      selection = resolver.selectConstructor(implementationType, token);
+    } catch (error) {
+      if (error instanceof ResolutionException && implementationType.length === 0) {
+        throw new ValidationException(
+          `Constructor metadata for ${describeToken(token)} is invalid.`,
+          token,
+        );
+      }
+      throw error;
+    }
+
     const values = selection.parameters.map((parameter) => {
       const dependencyToken = parameter.token as InjectionToken<unknown>;
-      const resolved = this.Resolve(dependencyToken as InjectionToken<TService>);
+      const dependencyDescriptors = this.findDescriptors(dependencyToken);
+      if (dependencyDescriptors.length === 0) {
+        throw new ValidationException(
+          `Missing dependency ${describeToken(dependencyToken)} required by ${describeToken(token)}.`,
+          token,
+        );
+      }
+
+      const resolved = this.resolveWithStack(
+        dependencyToken as InjectionToken<TService>,
+        stack,
+        scopeContext,
+      );
       return resolved;
     });
 
@@ -941,7 +1109,134 @@ export class ServiceProvider implements IServiceProvider {
 }
 
 /**
+ * Validates the service collection and dependency graph for missing registrations, invalid constructors,
+ * duplicate registrations, and circular dependency hazards.
+ */
+export class DependencyValidator {
+  public constructor(private readonly collection: IServiceCollection) {}
+
+  public validateCollection(): void {
+    const descriptors = this.collection.Enumerate();
+    const seen = new Set<symbol>();
+
+    for (const descriptor of descriptors) {
+      if (seen.has(descriptor.token)) {
+        throw new ValidationException(
+          `Duplicate registration detected for ${describeToken(descriptor.token)}.`,
+          descriptor.token,
+        );
+      }
+      seen.add(descriptor.token);
+
+      if (!this.isValidLifetime(descriptor.lifetime)) {
+        throw new ValidationException(
+          `Invalid lifetime '${String(descriptor.lifetime)}' for ${describeToken(descriptor.token)}.`,
+          descriptor.token,
+        );
+      }
+
+      if (descriptor.registration.kind === 'factory') {
+        if (typeof descriptor.registration.factory !== 'function') {
+          throw new ValidationException(
+            `Factory registration for ${describeToken(descriptor.token)} must be a function.`,
+            descriptor.token,
+          );
+        }
+
+        continue;
+      }
+
+      if (descriptor.registration.kind === 'type') {
+        const implementationType = descriptor.registration.type;
+        const constructor = implementationType.prototype?.constructor;
+        if (typeof constructor !== 'function') {
+          throw new ValidationException(
+            `Constructor registration for ${describeToken(descriptor.token)} is invalid.`,
+            descriptor.token,
+          );
+        }
+      }
+    }
+  }
+
+  public validateGraph(token: symbol): ResolutionPath {
+    const descriptors = this.collection.Enumerate();
+    const descriptor = descriptors.find((candidate) => candidate.token === token);
+    if (!descriptor) {
+      throw new ValidationException(`Missing registration for ${describeToken(token)}.`, token);
+    }
+
+    const stack = new ResolutionStack();
+    try {
+      return this.walkDependencies(descriptor, stack, token);
+    } catch (error) {
+      if (error instanceof CircularDependencyException) {
+        throw error;
+      }
+
+      if (error instanceof ValidationException) {
+        throw error;
+      }
+
+      throw new ValidationException(
+        `Unable to validate dependencies for ${describeToken(token)}.`,
+        token,
+      );
+    }
+  }
+
+  private walkDependencies(
+    descriptor: IServiceDescriptor<unknown>,
+    stack: ResolutionStack,
+    token: symbol,
+  ): ResolutionPath {
+    stack.push(token);
+    try {
+      if (descriptor.registration.kind === 'type') {
+        const implementationType = descriptor.registration.type as ServiceType<unknown>;
+        const selection = new ConstructorResolver().selectConstructor(implementationType, token);
+        const dependencyTokens = selection.parameters.map((parameter) => parameter.token);
+        const path = stack.currentPath();
+        for (const dependencyToken of dependencyTokens) {
+          const dependencyDescriptor = this.collection
+            .Enumerate()
+            .find((candidate) => candidate.token === dependencyToken);
+          if (!dependencyDescriptor) {
+            throw new ValidationException(
+              `Missing dependency ${describeToken(dependencyToken)} required by ${describeToken(token)}.`,
+              token,
+            );
+          }
+
+          if (dependencyToken === token) {
+            throw new CircularDependencyException(
+              `Circular dependency detected while resolving ${describeToken(token)}.`,
+              path.append(dependencyToken),
+              token,
+            );
+          }
+
+          this.walkDependencies(dependencyDescriptor, stack, dependencyToken);
+        }
+
+        return path;
+      }
+
+      return stack.currentPath();
+    } finally {
+      stack.pop(token);
+    }
+  }
+
+  private isValidLifetime(lifetime: ServiceLifetime): boolean {
+    return Object.values(ServiceLifetime).includes(lifetime);
+  }
+}
+
+/**
  * Scope wrapper for provider-based resolution.
+ *
+ * Scopes isolate scoped services while still allowing access to the root provider.
  */
 export class ServiceScope implements IServiceScope {
   public constructor(
@@ -1511,9 +1806,6 @@ function assertDescriptor<TService>(descriptor: IServiceDescriptor<TService>): v
     case 'self':
       return;
     case 'factory':
-      if (typeof descriptor.registration.factory !== 'function') {
-        throw new DependencyRegistrationError('Factory registration requires a function value.');
-      }
       return;
     case 'type':
       if (!isServiceType(descriptor.registration.type)) {

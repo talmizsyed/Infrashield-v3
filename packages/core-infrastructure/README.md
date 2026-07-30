@@ -27,44 +27,51 @@ It intentionally does not include:
 
 ## Architecture Overview
 
-Story 5.2 implements the Dependency Injection Service Collection layer only.
+The dependency injection package provides a metadata-driven composition layer for Agentic OS.
 
-`ServiceCollection` is a strongly typed registration list that stores metadata and performs registration validation.
+`ServiceCollection` stores registrations and validates their shape, while `ServiceProvider` and `ServiceScope` resolve services, honor lifetimes, support constructor injection, and manage disposal ownership.
 
-It intentionally does not:
+The package is intentionally focused on the core contracts:
 
-- resolve services
-- instantiate services
-- inspect constructor parameters
-- build object graphs
+- registration metadata and mutation (`AddSingleton`, `AddScoped`, `AddTransient`, `TryAdd`, `Replace`, `Remove`, `Clear`)
+- lifetime-aware resolution (`Singleton`, `Scoped`, `Transient`)
+- constructor-based dependency resolution for type registrations
+- disposal lifecycle ownership for `IDisposable` and `IAsyncDisposable`
+- validation for duplicate, invalid, and missing dependency registrations
 
-Story 5.3 adds the provider layer responsible for deterministic resolution from the registered metadata.
+## Public API
 
-Responsibilities implemented in this story:
+The package root exports the consumer-facing DI contracts and implementations only:
 
-1. Collect registration metadata by lifetime (`Singleton`, `Scoped`, `Transient`).
-2. Support registration mutation operations (`Add*`, `TryAdd`, `Replace`, `Remove`, `Clear`).
-3. Track collection metadata (`Count`, `Contains`, `Enumerate`).
-4. Validate duplicates and invalid registration inputs.
-5. Resolve registered services through `ServiceProvider`.
-6. Support singleton, transient, instance, and factory registrations.
-7. Expose required, optional, and multi-registration resolution helpers.
+- `IServiceCollection`
+- `IServiceProvider`
+- `IServiceScope`
+- `IServiceScopeFactory`
+- `ServiceCollection`
+- `ServiceProvider`
+- `ServiceScope`
+- `ServiceLifetime`
+- `ServiceDescriptor`
+- dependency injection exceptions
+
+Internal helper types such as validation and scope internals remain implementation details and are not surfaced through the package root.
 
 ## Resolution Lifecycle
 
-The provider resolves services from the registration collection without performing constructor injection.
+The provider resolves services from the registration collection while preserving lifetime semantics and constructor dependencies.
 
 Resolution flow:
 
-1. The provider inspects the service collection for matching descriptors for a token.
+1. The provider checks the service collection for matching descriptors for a token.
 2. For single-registration tokens, it resolves the descriptor directly.
 3. For multi-registration tokens, `ResolveAll` returns each matching instance in registration order.
 4. Singleton registrations are cached per provider instance.
-5. Scoped registrations are cached per scope instance.
+5. Scoped registrations are cached per scope instance and are isolated from sibling scopes.
 6. Transient registrations always create a new instance.
 7. Factory registrations receive the provider instance and may throw to signal resolution failure.
+8. Type registrations resolve constructor dependencies recursively using the same lifetime-aware rules.
 
-The provider emits `ResolutionException` for missing registrations, factory failures, invalid lifetime metadata, duplicate registration conflicts, and post-disposal usage during resolution.
+The provider emits `ResolutionException` for missing registrations, factory failures, invalid lifetime metadata, duplicate registration conflicts, and post-disposal usage during resolution. Validation failures for malformed constructor metadata or dependency graph problems are surfaced as `ValidationException`.
 
 ## Disposal Lifecycle
 
@@ -221,6 +228,7 @@ const allLoggers = provider.ResolveAll(LOGGER_TOKEN);
 - Prefer `ResolveRequired` for mandatory services and `TryResolve` for optional ones.
 - Keep the provider focused on deterministic object resolution and lifecycle ownership.
 - Implement disposal-aware services when the container should release external resources or subscriptions.
+- Favor constructor injection for type-based services so dependency graphs remain explicit and inspectable.
 
 ## Extension Guide
 

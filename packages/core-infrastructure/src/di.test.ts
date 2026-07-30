@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CircularDependencyException,
   createInjectionToken,
   DependencyRegistrationError,
+  DependencyValidator,
   type IDisposable,
   type IAsyncDisposable,
   ResolutionException,
@@ -12,6 +14,7 @@ import {
   ServiceProvider,
   type ServiceFactory,
   type ServiceType,
+  ValidationException,
 } from './di';
 
 class TestService {
@@ -73,6 +76,34 @@ class RootDependency {
 
 class ConstructorConsumer {
   public constructor(public readonly dependency: RootDependency) {}
+}
+
+class CircularA {
+  public constructor(public readonly dependency: CircularB) {}
+}
+
+class CircularB {
+  public constructor(public readonly dependency: CircularA) {}
+}
+
+class DeepCircularA {
+  public constructor(public readonly dependency: DeepCircularB) {}
+}
+
+class DeepCircularB {
+  public constructor(public readonly dependency: DeepCircularC) {}
+}
+
+class DeepCircularC {
+  public constructor(public readonly dependency: DeepCircularA) {}
+}
+
+class SelfCircularService {
+  public constructor(public readonly dependency: SelfCircularService) {}
+}
+
+class MissingDependencyConsumer {
+  public constructor(public readonly dependency: LeafDependency) {}
 }
 
 class MultiDependencyConsumer {
@@ -466,7 +497,7 @@ describe('service provider', () => {
     expect(consumer.second.leaf).toBeInstanceOf(LeafDependency);
   });
 
-  it('throws when constructor dependencies are missing', () => {
+  it('validates constructor dependencies that are missing from the collection', () => {
     const consumerToken = createInjectionToken<ConstructorConsumer>('missing-constructor-consumer');
     const collection = new ServiceCollection();
 
@@ -479,7 +510,7 @@ describe('service provider', () => {
 
     const provider = new ServiceProvider(collection);
 
-    expect(() => provider.Resolve(consumerToken)).toThrow(ResolutionException);
+    expect(() => provider.Resolve(consumerToken)).toThrow(ValidationException);
   });
 
   it('validates constructor dependency metadata', () => {
@@ -523,6 +554,43 @@ describe('service provider', () => {
     const consumer = provider.Resolve(consumerToken);
 
     expect(consumer.dependency).toBeInstanceOf(RootDependency);
+  });
+
+  it('supports mixed singleton, scoped, transient, factory, and instance registrations end to end', async () => {
+    const singletonToken = createInjectionToken<LeafDependency>('e2e-singleton');
+    const scopedToken = createInjectionToken<MiddleDependency>('e2e-scoped');
+    const transientToken = createInjectionToken<RootDependency>('e2e-transient');
+    const factoryToken = createInjectionToken<DisposableService>('e2e-factory');
+    const instanceToken = createInjectionToken<DisposableService>('e2e-instance');
+    const collection = new ServiceCollection();
+
+    collection.AddSingleton(singletonToken, LeafDependency);
+    collection.AddScoped(
+      scopedToken,
+      annotateConstructorDependencies(MiddleDependency, [singletonToken]),
+    );
+    collection.AddTransient(
+      transientToken,
+      annotateConstructorDependencies(RootDependency, [scopedToken, singletonToken]),
+    );
+    collection.AddSingleton(factoryToken, () => new DisposableService('factory'));
+    collection.AddInstance(instanceToken, new DisposableService('instance'));
+
+    const provider = new ServiceProvider(collection);
+    const scope = provider.createScope();
+
+    const scopeMiddle = scope.resolve(scopedToken);
+    const root = scope.resolve(transientToken);
+    const singleton = scope.resolve(singletonToken);
+
+    expect(scopeMiddle.leaf).toBe(singleton);
+    expect(root.middle).toBe(scopeMiddle);
+    expect(root.leaf).toBe(singleton);
+    expect(provider.Resolve(factoryToken)).toBeInstanceOf(DisposableService);
+    expect(provider.Resolve(instanceToken)).toBeInstanceOf(DisposableService);
+
+    await scope.dispose();
+    await provider.dispose();
   });
 
   it('creates scoped services that are isolated per scope', () => {
@@ -726,5 +794,113 @@ describe('service provider', () => {
     await expect(
       Promise.all([provider.dispose(), provider.dispose(), provider.dispose()]),
     ).resolves.toEqual([undefined, undefined, undefined]);
+  });
+
+  it('detects simple circular dependencies during resolution', () => {
+    const tokenA = createInjectionToken<CircularA>('circular-a');
+    const tokenB = createInjectionToken<CircularB>('circular-b');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(tokenA, annotateConstructorDependencies(CircularA, [tokenB]));
+    collection.AddSingleton(tokenB, annotateConstructorDependencies(CircularB, [tokenA]));
+
+    const provider = new ServiceProvider(collection);
+
+    expect(() => provider.Resolve(tokenA)).toThrow(CircularDependencyException);
+  });
+
+  it('detects deep circular dependencies and reports their path', () => {
+    const tokenA = createInjectionToken<DeepCircularA>('deep-circular-a');
+    const tokenB = createInjectionToken<DeepCircularB>('deep-circular-b');
+    const tokenC = createInjectionToken<DeepCircularC>('deep-circular-c');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(tokenA, annotateConstructorDependencies(DeepCircularA, [tokenB]));
+    collection.AddSingleton(tokenB, annotateConstructorDependencies(DeepCircularB, [tokenC]));
+    collection.AddSingleton(tokenC, annotateConstructorDependencies(DeepCircularC, [tokenA]));
+
+    const provider = new ServiceProvider(collection);
+
+    try {
+      provider.Resolve(tokenA);
+      throw new Error('Expected circular dependency exception');
+    } catch (error) {
+      expect(error).toBeInstanceOf(CircularDependencyException);
+      if (error instanceof CircularDependencyException) {
+        expect(error.path.steps).toEqual([tokenA, tokenB, tokenC, tokenA]);
+      }
+    }
+  });
+
+  it('detects self dependencies as circular dependencies', () => {
+    const token = createInjectionToken<SelfCircularService>('self-circular');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, annotateConstructorDependencies(SelfCircularService, [token]));
+
+    const provider = new ServiceProvider(collection);
+
+    expect(() => provider.Resolve(token)).toThrow(CircularDependencyException);
+  });
+
+  it('throws validation exceptions for missing dependencies', () => {
+    const token = createInjectionToken<MissingDependencyConsumer>('missing-dependency');
+    const missingDependencyToken = createInjectionToken<LeafDependency>(
+      'missing-dependency-target',
+    );
+    const collection = new ServiceCollection();
+    collection.AddSingleton(
+      token,
+      annotateConstructorDependencies(MissingDependencyConsumer, [missingDependencyToken]),
+    );
+
+    const provider = new ServiceProvider(collection);
+
+    expect(() => provider.Resolve(token)).toThrow(ValidationException);
+  });
+
+  it('throws validation exceptions for invalid constructor metadata', () => {
+    const token = createInjectionToken<TestService>('invalid-constructor');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, annotateConstructorDependencies(TestService, [token]));
+
+    const provider = new ServiceProvider(collection);
+
+    expect(() => provider.Resolve(token)).toThrow(ValidationException);
+  });
+
+  it('throws validation exceptions for invalid factory registrations', () => {
+    const token = createInjectionToken<TestService>('invalid-factory');
+    const collection = new ServiceCollection();
+    collection.register(
+      ServiceDescriptor.fromFactory(
+        token,
+        ServiceLifetime.Singleton,
+        undefined as unknown as ServiceFactory<TestService>,
+      ),
+    );
+
+    expect(() => new DependencyValidator(collection).validateCollection()).toThrow(
+      ValidationException,
+    );
+  });
+
+  it('reports duplicate registrations through validation', () => {
+    const token = createInjectionToken<TestService>('duplicate-validation');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new TestService());
+    collection.AddSingleton(token, () => new TestService());
+
+    expect(() => new DependencyValidator(collection).validateCollection()).toThrow(
+      ValidationException,
+    );
+  });
+
+  it('supports concurrent validation without sharing state', async () => {
+    const token = createInjectionToken<TestService>('concurrent-validation');
+    const collection = new ServiceCollection();
+    collection.AddSingleton(token, () => new TestService());
+
+    const validator = new DependencyValidator(collection);
+    await expect(
+      Promise.all([validator.validateCollection(), validator.validateCollection()]),
+    ).resolves.toEqual([undefined, undefined]);
   });
 });

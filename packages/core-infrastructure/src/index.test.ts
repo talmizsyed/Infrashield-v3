@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import * as infrastructure from './index';
 import { FixedClock, OffsetClock, SystemClock } from './clock';
 import { createConfigurationProvider, StaticConfigurationProvider } from './configuration';
 import { createInjectionToken } from './di';
@@ -152,6 +153,14 @@ describe('core-infrastructure', () => {
 
       expect(typeof tokenA).toBe('symbol');
       expect(tokenA).not.toBe(tokenB);
+    });
+
+    it('keeps the package entrypoint focused on public DI contracts', () => {
+      expect(infrastructure.ServiceCollection).toBeDefined();
+      expect(infrastructure.ServiceProvider).toBeDefined();
+      expect('DependencyValidator' in infrastructure).toBe(false);
+      expect('ServiceResolver' in infrastructure).toBe(false);
+      expect('ScopedServiceProvider' in infrastructure).toBe(false);
     });
   });
 
