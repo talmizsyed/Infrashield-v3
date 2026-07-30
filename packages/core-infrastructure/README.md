@@ -22,27 +22,32 @@ It intentionally does not include:
 - `configuration`: typed configuration provider contracts and implementation
 - `clock`: system/fixed/offset clock contracts and implementations
 - `serializer`: serializer contracts and JSON implementation with safe wrappers
-- `di`: dependency injection contracts and container implementation
+- `di`: dependency injection contracts and service collection metadata implementation
 - `options`: options pattern contracts and generic options builder
 
 ## Architecture Overview
 
-The dependency injection framework in `di.ts` follows a startup/build/resolve lifecycle:
+Story 5.2 implements the Dependency Injection Service Collection layer only.
 
-1. `ServiceCollection` records registrations and supports mutation operations (`Add*`, `TryAdd`, `Replace`, `Remove`, `Clear`).
-2. `buildServiceProvider()` freezes registration state and optionally validates constructor metadata, missing dependencies, duplicates, and circular graphs.
-3. `ServiceProvider` resolves services with singleton/scoped/transient lifetime semantics.
-4. `IServiceScopeFactory` creates child scopes for scoped service isolation.
-5. Deterministic disposal cleans up scoped and singleton instances in reverse creation order and supports sync/async disposal.
+`ServiceCollection` is a strongly typed registration list that stores metadata and performs registration validation.
 
-The framework supports constructor injection via static metadata:
+It intentionally does not:
 
-- Constructor-injected types declare `static inject = [TOKEN_A, TOKEN_B]`.
-- The container resolves those dependencies recursively and detects circular graphs.
+- resolve services
+- instantiate services
+- inspect constructor parameters
+- build object graphs
+
+Responsibilities implemented in this story:
+
+1. Collect registration metadata by lifetime (`Singleton`, `Scoped`, `Transient`).
+2. Support registration mutation operations (`Add*`, `TryAdd`, `Replace`, `Remove`, `Clear`).
+3. Track collection metadata (`Count`, `Contains`, `Enumerate`).
+4. Validate duplicates and invalid registration inputs.
 
 ## Usage Examples
 
-### Basic Registration and Resolution
+### Basic Registration
 
 ```ts
 import { createInjectionToken, ServiceCollection } from '@infrashield/core-infrastructure';
@@ -52,11 +57,11 @@ const MESSAGE_TOKEN = createInjectionToken<string>('message');
 const services = new ServiceCollection();
 services.AddSingleton(MESSAGE_TOKEN, () => 'hello');
 
-const provider = services.buildServiceProvider();
-const message = provider.ResolveRequired(MESSAGE_TOKEN);
+const descriptors = services.Enumerate();
+const count = services.Count;
 ```
 
-### Constructor Injection
+### Typed Registration Metadata
 
 ```ts
 import {
@@ -73,8 +78,6 @@ const LOGGER_TOKEN = createInjectionToken<ILogger>('logger');
 const HANDLER_TOKEN = createInjectionToken<RequestHandler>('handler');
 
 class RequestHandler {
-  static inject: readonly InjectionToken<unknown>[] = [LOGGER_TOKEN];
-
   constructor(private readonly logger: ILogger) {}
 
   handle(): void {
@@ -86,49 +89,45 @@ const services = new ServiceCollection();
 services.AddSingleton(LOGGER_TOKEN, () => ({ info: () => undefined }));
 services.AddTransient(HANDLER_TOKEN, RequestHandler);
 
-const provider = services.buildServiceProvider();
-provider.ResolveRequired(HANDLER_TOKEN).handle();
+const report = services.Validate();
+if (report.valid) {
+  const registrations = services.Enumerate();
+  void registrations;
+}
 ```
 
-### Scopes
+### TryAdd and Replace
 
 ```ts
-import { createInjectionToken, ServiceCollection } from '@infrashield/core-infrastructure';
+import {
+  createInjectionToken,
+  ServiceCollection,
+  ServiceDescriptor,
+  ServiceLifetime,
+} from '@infrashield/core-infrastructure';
 
 const CONTEXT_TOKEN = createInjectionToken<{ id: number }>('context');
 
 const services = new ServiceCollection();
-let seed = 0;
-services.AddScoped(CONTEXT_TOKEN, () => ({ id: ++seed }));
-
-const provider = services.buildServiceProvider();
-const scopeA = provider.createScope();
-const scopeB = provider.createScope();
-
-const a1 = scopeA.provider.ResolveRequired(CONTEXT_TOKEN);
-const a2 = scopeA.provider.ResolveRequired(CONTEXT_TOKEN);
-const b1 = scopeB.provider.ResolveRequired(CONTEXT_TOKEN);
-
-// a1 === a2, a1 !== b1
+services.TryAdd(ServiceDescriptor.self(CONTEXT_TOKEN, ServiceLifetime.Scoped));
+services.Replace(ServiceDescriptor.self(CONTEXT_TOKEN, ServiceLifetime.Singleton));
 ```
 
 ## Best Practices
 
-- Register all services during startup, then build exactly one root provider.
-- Use `AddScoped` for unit-of-work or request-local dependencies.
-- Use `AddSingleton` only for stateless or thread-safe shared services.
-- Use `AddTransient` for lightweight short-lived objects.
-- Prefer constructor injection over service locator calls in domain code.
-- Always call `dispose()` on scopes and the root provider.
-- Keep `validateOnBuild` enabled in production startup.
+- Register all services during startup in a single composition root.
+- Use explicit lifetimes (`AddSingleton`, `AddScoped`, `AddTransient`) to communicate intent.
+- Use `TryAdd` for optional defaults and `Replace` for environment-specific overrides.
+- Validate and inspect registrations before handing metadata to provider construction logic.
+- Avoid duplicate equivalent registrations.
 
 ## Extension Guide
 
 You can extend the DI framework without changing existing interfaces:
 
 - Compose helper registration functions per module boundary.
-- Build profile-specific startup assemblies using `TryAdd` and `Replace`.
-- Add diagnostics by wrapping service factories with timing/logging decorators.
-- Add stricter startup policies by running `validate({ throwOnDuplicateRegistrations: true })` before build.
+- Build profile-specific assemblies using `TryAdd`, `Replace`, and `Remove`.
+- Add diagnostics by inspecting `Enumerate()` and `Validate()` results.
+- Keep this layer metadata-only; provider resolution and instantiation belong to provider implementations.
 
-When extending, preserve provider-agnostic behavior and avoid embedding runtime, AI, memory, or plugin-specific logic into the container layer.
+When extending, preserve provider-agnostic behavior and avoid embedding runtime, AI, memory, or plugin-specific logic in the registration layer.

@@ -6,7 +6,7 @@ export type InjectionToken<TService> = symbol & {
 };
 
 /**
- * Service lifetime constants supported by the container.
+ * Service lifetime constants used by the registration model.
  */
 export const ServiceLifetime = {
   Singleton: 'singleton',
@@ -35,23 +35,27 @@ export const Scoped: ServiceLifetime = ServiceLifetime.Scoped;
 export const Transient: ServiceLifetime = ServiceLifetime.Transient;
 
 /**
- * Constructor type used for constructor-injected services.
+ * Constructor type captured as metadata only.
  */
 export interface ServiceType<TService> {
   new (...args: readonly unknown[]): TService;
-  readonly inject?: readonly InjectionToken<unknown>[];
 }
 
 /**
- * Factory for creating a service instance.
+ * Service factory metadata type.
+ *
+ * The collection stores this factory but never invokes it.
  */
 export type ServiceFactory<TService> = (provider: IServiceProvider) => TService;
 
 /**
- * Supported service implementation source.
+ * Metadata describing how a service will be provided.
  */
-export type ServiceImplementation<TService> =
-  ServiceFactory<TService> | ServiceType<TService> | TService;
+export type ServiceRegistration<TService> =
+  | { readonly kind: 'self' }
+  | { readonly kind: 'factory'; readonly factory: ServiceFactory<TService> }
+  | { readonly kind: 'type'; readonly type: ServiceType<TService> }
+  | { readonly kind: 'instance'; readonly instance: TService };
 
 /**
  * Service descriptor contract.
@@ -59,58 +63,18 @@ export type ServiceImplementation<TService> =
 export interface IServiceDescriptor<TService> {
   readonly token: InjectionToken<TService>;
   readonly lifetime: ServiceLifetime;
-  readonly implementationFactory: ServiceFactory<TService>;
+  readonly registration: ServiceRegistration<TService>;
 }
 
 /**
- * Internal descriptor model with full implementation metadata.
- */
-interface DescriptorEntry<TService> extends IServiceDescriptor<TService> {
-  readonly implementationType?: ServiceType<TService>;
-  readonly implementationInstance?: TService;
-  readonly order: number;
-}
-
-/**
- * Diagnostic issue raised during registration validation.
- */
-export interface ValidationIssue {
-  readonly code:
-    | 'di.duplicate_registration'
-    | 'di.missing_dependency'
-    | 'di.circular_dependency'
-    | 'di.constructor_injection_missing'
-    | 'di.constructor_parameter_mismatch';
-  readonly message: string;
-  readonly token: symbol;
-  readonly details?: Readonly<Record<string, unknown>>;
-}
-
-/**
- * Validation report for container registrations.
- */
-export interface ValidationReport {
-  readonly valid: boolean;
-  readonly issues: readonly ValidationIssue[];
-}
-
-/**
- * Options for building a provider.
- */
-export interface BuildServiceProviderOptions {
-  readonly validateOnBuild?: boolean;
-  readonly throwOnDuplicateRegistrations?: boolean;
-}
-
-/**
- * Scope factory contract.
+ * Scope factory contract used by provider abstractions.
  */
 export interface IServiceScopeFactory {
   createScope(): IServiceScope;
 }
 
 /**
- * Resolver contract for service lookup.
+ * Resolver contract used by provider abstractions.
  */
 export interface IServiceResolver {
   resolve<TService>(token: InjectionToken<TService>): TService;
@@ -118,63 +82,7 @@ export interface IServiceResolver {
 }
 
 /**
- * Mutable service registration contract.
- */
-export interface IServiceCollection {
-  register<TService>(descriptor: IServiceDescriptor<TService>): void;
-  AddSingleton<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void;
-  AddScoped<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void;
-  AddTransient<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void;
-  AddInstance<TService>(token: InjectionToken<TService>, instance: TService): void;
-  TryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean;
-  Replace<TService>(descriptor: IServiceDescriptor<TService>): void;
-  Remove(token: symbol): boolean;
-  Clear(): void;
-  addSingleton<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void;
-  addScoped<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void;
-  addTransient<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void;
-  addInstance<TService>(token: InjectionToken<TService>, instance: TService): void;
-  tryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean;
-  replace<TService>(descriptor: IServiceDescriptor<TService>): void;
-  remove(token: symbol): boolean;
-  clear(): void;
-  buildServiceProvider(options?: BuildServiceProviderOptions): IServiceProvider;
-  getDuplicateRegistrations(): readonly symbol[];
-  validate(options?: { readonly throwOnDuplicateRegistrations?: boolean }): ValidationReport;
-  registerSingleton<TService>(
-    token: InjectionToken<TService>,
-    factory: ServiceFactory<TService>,
-  ): void;
-  registerScoped<TService>(
-    token: InjectionToken<TService>,
-    factory: ServiceFactory<TService>,
-  ): void;
-  registerTransient<TService>(
-    token: InjectionToken<TService>,
-    factory: ServiceFactory<TService>,
-  ): void;
-}
-
-/**
- * Scope contract for scoped service lifetimes.
+ * Scope contract used by provider abstractions.
  */
 export interface IServiceScope extends IServiceResolver {
   readonly provider: IServiceProvider;
@@ -182,7 +90,7 @@ export interface IServiceScope extends IServiceResolver {
 }
 
 /**
- * Provider contract that resolves services and creates scopes.
+ * Provider contract used by service factories.
  */
 export interface IServiceProvider extends IServiceResolver, IServiceScopeFactory {
   Resolve<TService>(token: InjectionToken<TService>): TService;
@@ -194,56 +102,114 @@ export interface IServiceProvider extends IServiceResolver, IServiceScopeFactory
 }
 
 /**
- * Descriptor implementation used by ServiceCollection.
+ * Duplicate registration diagnostic.
  */
-export class ServiceDescriptor<TService> implements IServiceDescriptor<TService> {
-  public readonly token: InjectionToken<TService>;
-  public readonly lifetime: ServiceLifetime;
-  public readonly implementationFactory: ServiceFactory<TService>;
+export interface DuplicateRegistration {
+  readonly token: symbol;
+  readonly count: number;
+}
 
-  private constructor(
-    token: InjectionToken<TService>,
-    lifetime: ServiceLifetime,
-    implementationFactory: ServiceFactory<TService>,
-  ) {
-    this.token = token;
-    this.lifetime = lifetime;
-    this.implementationFactory = implementationFactory;
-  }
+/**
+ * Validation report for service collection metadata.
+ */
+export interface ServiceCollectionValidationReport {
+  readonly valid: boolean;
+  readonly duplicates: readonly DuplicateRegistration[];
+}
 
-  /**
-   * Creates a descriptor from a factory.
-   */
-  public static fromFactory<TService>(
-    token: InjectionToken<TService>,
-    lifetime: ServiceLifetime,
-    implementationFactory: ServiceFactory<TService>,
-  ): ServiceDescriptor<TService> {
-    return new ServiceDescriptor(token, lifetime, implementationFactory);
-  }
+/**
+ * Mutable registration collection contract.
+ *
+ * This collection stores metadata only and does not resolve or instantiate services.
+ */
+export interface IServiceCollection {
+  readonly Count: number;
 
-  /**
-   * Creates a descriptor from a constructor type with constructor injection.
-   */
-  public static fromType<TService>(
-    token: InjectionToken<TService>,
-    lifetime: ServiceLifetime,
-    implementationType: ServiceType<TService>,
-  ): ServiceDescriptor<TService> {
-    return new ServiceDescriptor(token, lifetime, (provider) =>
-      instantiateFromType(implementationType, provider),
-    );
-  }
+  register<TService>(descriptor: IServiceDescriptor<TService>): void;
 
-  /**
-   * Creates a singleton descriptor from a pre-built instance.
-   */
-  public static fromInstance<TService>(
+  AddSingleton<TService, TImplementation extends TService>(
     token: InjectionToken<TService>,
-    instance: TService,
-  ): ServiceDescriptor<TService> {
-    return new ServiceDescriptor(token, ServiceLifetime.Singleton, () => instance);
-  }
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  AddSingleton<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  AddSingleton<TService>(token: InjectionToken<TService>, instance: TService): void;
+  AddSingleton<TService>(token: InjectionToken<TService>): void;
+  AddSingleton<TService>(descriptor: IServiceDescriptor<TService>): void;
+
+  AddScoped<TService, TImplementation extends TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  AddScoped<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  AddScoped<TService>(token: InjectionToken<TService>): void;
+  AddScoped<TService>(descriptor: IServiceDescriptor<TService>): void;
+
+  AddTransient<TService, TImplementation extends TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  AddTransient<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  AddTransient<TService>(token: InjectionToken<TService>): void;
+  AddTransient<TService>(descriptor: IServiceDescriptor<TService>): void;
+
+  AddInstance<TService>(token: InjectionToken<TService>, instance: TService): void;
+
+  TryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean;
+  Replace<TService>(descriptor: IServiceDescriptor<TService>): void;
+  Remove(token: symbol): boolean;
+  Clear(): void;
+  Contains(token: symbol): boolean;
+  Enumerate(): readonly IServiceDescriptor<unknown>[];
+  Validate(): ServiceCollectionValidationReport;
+
+  addSingleton<TService, TImplementation extends TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  addSingleton<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  addSingleton<TService>(token: InjectionToken<TService>, instance: TService): void;
+  addSingleton<TService>(token: InjectionToken<TService>): void;
+
+  addScoped<TService, TImplementation extends TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  addScoped<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  addScoped<TService>(token: InjectionToken<TService>): void;
+
+  addTransient<TService, TImplementation extends TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  addTransient<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  addTransient<TService>(token: InjectionToken<TService>): void;
+
+  addInstance<TService>(token: InjectionToken<TService>, instance: TService): void;
+  tryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean;
+  replace<TService>(descriptor: IServiceDescriptor<TService>): void;
+  remove(token: symbol): boolean;
+  clear(): void;
+  contains(token: symbol): boolean;
+  enumerate(): readonly IServiceDescriptor<unknown>[];
+  validate(): ServiceCollectionValidationReport;
 }
 
 /**
@@ -260,17 +226,7 @@ export class DependencyInjectionError extends Error {
 }
 
 /**
- * Exception raised when resolution fails.
- */
-export class DependencyResolutionError extends DependencyInjectionError {
-  public constructor(message: string) {
-    super('di.resolution_failed', message);
-    this.name = 'DependencyResolutionError';
-  }
-}
-
-/**
- * Exception raised when registration data is invalid.
+ * Exception raised for invalid registration input.
  */
 export class DependencyRegistrationError extends DependencyInjectionError {
   public constructor(message: string) {
@@ -280,48 +236,174 @@ export class DependencyRegistrationError extends DependencyInjectionError {
 }
 
 /**
- * In-memory service collection used during startup registration.
+ * Metadata representation of a service registration.
+ */
+export class ServiceDescriptor<TService> implements IServiceDescriptor<TService> {
+  public readonly token: InjectionToken<TService>;
+  public readonly lifetime: ServiceLifetime;
+  public readonly registration: ServiceRegistration<TService>;
+
+  public constructor(
+    token: InjectionToken<TService>,
+    lifetime: ServiceLifetime,
+    registration: ServiceRegistration<TService>,
+  ) {
+    this.token = token;
+    this.lifetime = lifetime;
+    this.registration = registration;
+  }
+
+  /**
+   * Creates a descriptor with self registration metadata.
+   */
+  public static self<TService>(
+    token: InjectionToken<TService>,
+    lifetime: ServiceLifetime,
+  ): ServiceDescriptor<TService> {
+    return new ServiceDescriptor(token, lifetime, { kind: 'self' });
+  }
+
+  /**
+   * Creates a descriptor with factory registration metadata.
+   */
+  public static fromFactory<TService>(
+    token: InjectionToken<TService>,
+    lifetime: ServiceLifetime,
+    factory: ServiceFactory<TService>,
+  ): ServiceDescriptor<TService> {
+    return new ServiceDescriptor(token, lifetime, { kind: 'factory', factory });
+  }
+
+  /**
+   * Creates a descriptor with constructor type metadata.
+   */
+  public static fromType<TService, TImplementation extends TService>(
+    token: InjectionToken<TService>,
+    lifetime: ServiceLifetime,
+    implementationType: ServiceType<TImplementation>,
+  ): ServiceDescriptor<TService> {
+    return new ServiceDescriptor(token, lifetime, {
+      kind: 'type',
+      type: implementationType as ServiceType<TService>,
+    });
+  }
+
+  /**
+   * Creates a descriptor with pre-built singleton instance metadata.
+   */
+  public static fromInstance<TService>(
+    token: InjectionToken<TService>,
+    instance: TService,
+  ): ServiceDescriptor<TService> {
+    return new ServiceDescriptor(token, ServiceLifetime.Singleton, {
+      kind: 'instance',
+      instance,
+    });
+  }
+}
+
+/**
+ * In-memory implementation of the DI registration collection.
  */
 export class ServiceCollection implements IServiceCollection {
-  private readonly descriptors = new Map<symbol, DescriptorEntry<unknown>[]>();
-  private orderCounter = 0;
+  private readonly descriptors: IServiceDescriptor<unknown>[] = [];
+
+  public get Count(): number {
+    return this.descriptors.length;
+  }
 
   public register<TService>(descriptor: IServiceDescriptor<TService>): void {
-    const entry: DescriptorEntry<TService> = {
-      ...descriptor,
-      order: this.nextOrder(),
-    };
-    this.addEntry(entry);
+    assertDescriptor(descriptor);
+    this.throwIfEquivalentDescriptorExists(descriptor);
+    this.descriptors.push(descriptor as IServiceDescriptor<unknown>);
   }
 
-  public addSingleton<TService>(
+  public AddSingleton<TService, TImplementation extends TService>(
     token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void {
-    this.add(token, ServiceLifetime.Singleton, implementation);
-  }
-
-  public addScoped<TService>(
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  public AddSingleton<TService>(
     token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  public AddSingleton<TService>(token: InjectionToken<TService>, instance: TService): void;
+  public AddSingleton<TService>(token: InjectionToken<TService>): void;
+  public AddSingleton<TService>(descriptor: IServiceDescriptor<TService>): void;
+  public AddSingleton<TService>(
+    tokenOrDescriptor: InjectionToken<TService> | IServiceDescriptor<TService>,
+    implementation?: ServiceFactory<TService> | ServiceType<TService> | TService,
   ): void {
-    this.add(token, ServiceLifetime.Scoped, implementation);
+    if (isDescriptor(tokenOrDescriptor)) {
+      this.ensureLifetime(tokenOrDescriptor, ServiceLifetime.Singleton, 'AddSingleton');
+      this.register(tokenOrDescriptor);
+      return;
+    }
+
+    this.register(
+      this.createDescriptor(tokenOrDescriptor, ServiceLifetime.Singleton, implementation),
+    );
   }
 
-  public addTransient<TService>(
+  public AddScoped<TService, TImplementation extends TService>(
     token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  public AddScoped<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  public AddScoped<TService>(token: InjectionToken<TService>): void;
+  public AddScoped<TService>(descriptor: IServiceDescriptor<TService>): void;
+  public AddScoped<TService>(
+    tokenOrDescriptor: InjectionToken<TService> | IServiceDescriptor<TService>,
+    implementation?: ServiceFactory<TService> | ServiceType<TService>,
   ): void {
-    this.add(token, ServiceLifetime.Transient, implementation);
+    if (isDescriptor(tokenOrDescriptor)) {
+      this.ensureLifetime(tokenOrDescriptor, ServiceLifetime.Scoped, 'AddScoped');
+      this.register(tokenOrDescriptor);
+      return;
+    }
+
+    this.register(this.createDescriptor(tokenOrDescriptor, ServiceLifetime.Scoped, implementation));
   }
 
-  public addInstance<TService>(token: InjectionToken<TService>, instance: TService): void {
-    const descriptor = this.createDescriptor(token, ServiceLifetime.Singleton, instance);
-    this.addEntry(descriptor);
+  public AddTransient<TService, TImplementation extends TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  public AddTransient<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  public AddTransient<TService>(token: InjectionToken<TService>): void;
+  public AddTransient<TService>(descriptor: IServiceDescriptor<TService>): void;
+  public AddTransient<TService>(
+    tokenOrDescriptor: InjectionToken<TService> | IServiceDescriptor<TService>,
+    implementation?: ServiceFactory<TService> | ServiceType<TService>,
+  ): void {
+    if (isDescriptor(tokenOrDescriptor)) {
+      this.ensureLifetime(tokenOrDescriptor, ServiceLifetime.Transient, 'AddTransient');
+      this.register(tokenOrDescriptor);
+      return;
+    }
+
+    this.register(
+      this.createDescriptor(tokenOrDescriptor, ServiceLifetime.Transient, implementation),
+    );
   }
 
-  public tryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean {
-    if (this.descriptors.has(descriptor.token)) {
+  public AddInstance<TService>(token: InjectionToken<TService>, instance: TService): void {
+    assertToken(token, 'AddInstance');
+    if (typeof instance === 'undefined') {
+      throw new DependencyRegistrationError('AddInstance requires a defined instance value.');
+    }
+
+    this.register(ServiceDescriptor.fromInstance(token, instance));
+  }
+
+  public TryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean {
+    assertDescriptor(descriptor);
+    if (this.Contains(descriptor.token)) {
       return false;
     }
 
@@ -329,580 +411,201 @@ export class ServiceCollection implements IServiceCollection {
     return true;
   }
 
-  public replace<TService>(descriptor: IServiceDescriptor<TService>): void {
-    this.descriptors.set(descriptor.token, []);
+  public Replace<TService>(descriptor: IServiceDescriptor<TService>): void {
+    assertDescriptor(descriptor);
+    this.Remove(descriptor.token);
     this.register(descriptor);
   }
 
-  public remove(token: symbol): boolean {
-    return this.descriptors.delete(token);
-  }
-
-  public clear(): void {
-    this.descriptors.clear();
-  }
-
-  public AddSingleton<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void {
-    this.addSingleton(token, implementation);
-  }
-
-  public AddScoped<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void {
-    this.addScoped(token, implementation);
-  }
-
-  public AddTransient<TService>(
-    token: InjectionToken<TService>,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void {
-    this.addTransient(token, implementation);
-  }
-
-  public AddInstance<TService>(token: InjectionToken<TService>, instance: TService): void {
-    this.addInstance(token, instance);
-  }
-
-  public TryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean {
-    return this.tryAdd(descriptor);
-  }
-
-  public Replace<TService>(descriptor: IServiceDescriptor<TService>): void {
-    this.replace(descriptor);
-  }
-
   public Remove(token: symbol): boolean {
-    return this.remove(token);
+    assertToken(token, 'Remove');
+    const before = this.descriptors.length;
+    const filtered = this.descriptors.filter((descriptor) => descriptor.token !== token);
+    if (filtered.length === before) {
+      return false;
+    }
+
+    this.descriptors.length = 0;
+    this.descriptors.push(...filtered);
+    return true;
   }
 
   public Clear(): void {
-    this.clear();
+    this.descriptors.length = 0;
   }
 
-  public getDuplicateRegistrations(): readonly symbol[] {
-    const duplicates: symbol[] = [];
-    for (const [token, entries] of this.descriptors.entries()) {
-      if (entries.length > 1) {
-        duplicates.push(token);
-      }
-    }
-
-    return duplicates;
+  public Contains(token: symbol): boolean {
+    assertToken(token, 'Contains');
+    return this.descriptors.some((descriptor) => descriptor.token === token);
   }
 
-  public buildServiceProvider(options: BuildServiceProviderOptions = {}): IServiceProvider {
-    const validateOnBuild = options.validateOnBuild ?? true;
-    if (validateOnBuild) {
-      const report = this.validate({
-        throwOnDuplicateRegistrations: options.throwOnDuplicateRegistrations ?? false,
-      });
-      if (!report.valid) {
-        throw new DependencyRegistrationError(
-          report.issues.map((issue) => issue.message).join('\n'),
-        );
-      }
-    }
-
-    return new ServiceProvider(this.cloneDescriptors());
+  public Enumerate(): readonly IServiceDescriptor<unknown>[] {
+    return [...this.descriptors];
   }
 
-  public validate(
-    options: { readonly throwOnDuplicateRegistrations?: boolean } = {},
-  ): ValidationReport {
-    const issues: ValidationIssue[] = [];
-    const tokenEntries = this.cloneDescriptors();
-    const throwOnDuplicate = options.throwOnDuplicateRegistrations ?? false;
-
-    for (const [token, entries] of tokenEntries.entries()) {
-      if (entries.length > 1 && throwOnDuplicate) {
-        issues.push({
-          code: 'di.duplicate_registration',
-          token,
-          message: `Duplicate registrations detected for ${describeToken(token)}.`,
-          details: { count: entries.length },
-        });
-      }
-
-      for (const entry of entries) {
-        if (!entry.implementationType) {
-          continue;
-        }
-
-        const inject = entry.implementationType.inject;
-        const ctorLength = entry.implementationType.length;
-
-        if (ctorLength > 0 && (!inject || inject.length === 0)) {
-          issues.push({
-            code: 'di.constructor_injection_missing',
-            token,
-            message:
-              `Type registration for ${describeToken(token)} requires dependencies, ` +
-              `but no static inject tokens were provided.`,
-          });
-        }
-
-        if (inject && inject.length < ctorLength) {
-          issues.push({
-            code: 'di.constructor_parameter_mismatch',
-            token,
-            message:
-              `Type registration for ${describeToken(token)} defines ${inject.length} ` +
-              `inject tokens but constructor expects ${ctorLength} parameter(s).`,
-          });
-        }
-
-        for (const dependencyToken of inject ?? []) {
-          if (!tokenEntries.has(dependencyToken)) {
-            issues.push({
-              code: 'di.missing_dependency',
-              token,
-              message:
-                `Type registration for ${describeToken(token)} depends on ` +
-                `${describeToken(dependencyToken)}, but no registration exists.`,
-              details: {
-                dependency: describeToken(dependencyToken),
-              },
-            });
-          }
-        }
-      }
-    }
-
-    const cycles = detectCircularDependencies(tokenEntries);
-    for (const cycle of cycles) {
-      const token = cycle[0] ?? Symbol('unknown-cycle-token');
-      issues.push({
-        code: 'di.circular_dependency',
-        token,
-        message: `Circular dependency detected: ${cycle.map(describeToken).join(' -> ')}.`,
-      });
-    }
-
+  public Validate(): ServiceCollectionValidationReport {
+    const duplicates = this.findDuplicates();
     return {
-      valid: issues.length === 0,
-      issues,
+      valid: duplicates.length === 0,
+      duplicates,
     };
   }
 
-  public registerSingleton<TService>(
+  public addSingleton<TService, TImplementation extends TService>(
     token: InjectionToken<TService>,
-    factory: ServiceFactory<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  public addSingleton<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  public addSingleton<TService>(token: InjectionToken<TService>, instance: TService): void;
+  public addSingleton<TService>(token: InjectionToken<TService>): void;
+  public addSingleton<TService>(
+    token: InjectionToken<TService>,
+    implementation?: ServiceFactory<TService> | ServiceType<TService> | TService,
   ): void {
-    this.addSingleton(token, factory);
+    this.AddSingleton(
+      token,
+      implementation as ServiceFactory<TService> | ServiceType<TService> | TService,
+    );
   }
 
-  public registerScoped<TService>(
+  public addScoped<TService, TImplementation extends TService>(
     token: InjectionToken<TService>,
-    factory: ServiceFactory<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  public addScoped<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  public addScoped<TService>(token: InjectionToken<TService>): void;
+  public addScoped<TService>(
+    token: InjectionToken<TService>,
+    implementation?: ServiceFactory<TService> | ServiceType<TService>,
   ): void {
-    this.addScoped(token, factory);
+    this.register(this.createDescriptor(token, ServiceLifetime.Scoped, implementation));
   }
 
-  public registerTransient<TService>(
+  public addTransient<TService, TImplementation extends TService>(
     token: InjectionToken<TService>,
-    factory: ServiceFactory<TService>,
+    implementation: ServiceType<TImplementation>,
+  ): void;
+  public addTransient<TService>(
+    token: InjectionToken<TService>,
+    implementation: ServiceFactory<TService>,
+  ): void;
+  public addTransient<TService>(token: InjectionToken<TService>): void;
+  public addTransient<TService>(
+    token: InjectionToken<TService>,
+    implementation?: ServiceFactory<TService> | ServiceType<TService>,
   ): void {
-    this.addTransient(token, factory);
+    this.register(this.createDescriptor(token, ServiceLifetime.Transient, implementation));
   }
 
-  private add<TService>(
-    token: InjectionToken<TService>,
-    lifetime: ServiceLifetime,
-    implementation: ServiceFactory<TService> | ServiceType<TService>,
-  ): void {
-    this.addEntry(this.createDescriptor(token, lifetime, implementation));
+  public addInstance<TService>(token: InjectionToken<TService>, instance: TService): void {
+    this.AddInstance(token, instance);
+  }
+
+  public tryAdd<TService>(descriptor: IServiceDescriptor<TService>): boolean {
+    return this.TryAdd(descriptor);
+  }
+
+  public replace<TService>(descriptor: IServiceDescriptor<TService>): void {
+    this.Replace(descriptor);
+  }
+
+  public remove(token: symbol): boolean {
+    return this.Remove(token);
+  }
+
+  public clear(): void {
+    this.Clear();
+  }
+
+  public contains(token: symbol): boolean {
+    return this.Contains(token);
+  }
+
+  public enumerate(): readonly IServiceDescriptor<unknown>[] {
+    return this.Enumerate();
+  }
+
+  public validate(): ServiceCollectionValidationReport {
+    return this.Validate();
   }
 
   private createDescriptor<TService>(
     token: InjectionToken<TService>,
     lifetime: ServiceLifetime,
-    implementation: ServiceImplementation<TService>,
-  ): DescriptorEntry<TService> {
-    const order = this.nextOrder();
+    implementation?: ServiceFactory<TService> | ServiceType<TService> | TService,
+  ): IServiceDescriptor<TService> {
+    assertToken(token, 'register');
+
+    if (typeof implementation === 'undefined') {
+      return ServiceDescriptor.self(token, lifetime);
+    }
 
     if (isServiceType(implementation)) {
-      return {
-        token,
-        lifetime,
-        implementationType: implementation,
-        implementationFactory: (provider) => instantiateFromType(implementation, provider),
-        order,
-      };
+      return ServiceDescriptor.fromType(token, lifetime, implementation);
     }
 
     if (typeof implementation === 'function') {
-      const implementationFactory = implementation as ServiceFactory<TService>;
-      return {
+      return ServiceDescriptor.fromFactory(
         token,
         lifetime,
-        implementationFactory,
-        order,
-      };
-    }
-
-    return {
-      token,
-      lifetime: ServiceLifetime.Singleton,
-      implementationFactory: () => implementation,
-      implementationInstance: implementation,
-      order,
-    };
-  }
-
-  private addEntry<TService>(entry: DescriptorEntry<TService>): void {
-    const current = this.descriptors.get(entry.token) ?? [];
-    this.descriptors.set(entry.token, [...current, entry as DescriptorEntry<unknown>]);
-  }
-
-  private cloneDescriptors(): ReadonlyMap<symbol, readonly DescriptorEntry<unknown>[]> {
-    const clone = new Map<symbol, readonly DescriptorEntry<unknown>[]>();
-    for (const [token, entries] of this.descriptors.entries()) {
-      clone.set(token, [...entries]);
-    }
-
-    return clone;
-  }
-
-  private nextOrder(): number {
-    this.orderCounter += 1;
-    return this.orderCounter;
-  }
-}
-
-class ServiceScopeImpl implements IServiceScope {
-  public readonly provider: IServiceProvider;
-  private readonly scopedInstances = new Map<DescriptorEntry<unknown>, unknown>();
-  private readonly disposalOrder: unknown[] = [];
-  private disposed = false;
-
-  public constructor(private readonly rootProvider: ServiceProvider) {
-    this.provider = rootProvider.createScopedProvider(this);
-  }
-
-  public resolve<TService>(token: InjectionToken<TService>): TService {
-    return this.provider.resolve(token);
-  }
-
-  public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
-    return this.provider.tryResolve(token);
-  }
-
-  public async dispose(): Promise<void> {
-    if (this.disposed) {
-      return;
-    }
-
-    this.disposed = true;
-    await disposeInReverseOrder(this.disposalOrder);
-    this.scopedInstances.clear();
-    this.rootProvider.detachScope(this);
-  }
-
-  public getOrCreateScopedInstance<TService>(
-    descriptor: DescriptorEntry<TService>,
-    creator: () => TService,
-  ): TService {
-    if (this.scopedInstances.has(descriptor)) {
-      return this.scopedInstances.get(descriptor) as TService;
-    }
-
-    const created = creator();
-    this.scopedInstances.set(descriptor, created);
-    this.disposalOrder.push(created);
-    return created;
-  }
-}
-
-class ScopedProvider implements IServiceProvider {
-  public constructor(
-    private readonly rootProvider: ServiceProvider,
-    private readonly scope: ServiceScopeImpl,
-  ) {}
-
-  public resolve<TService>(token: InjectionToken<TService>): TService {
-    const resolved = this.rootProvider.resolveFromScope(token, this.scope, false);
-    if (typeof resolved === 'undefined') {
-      throw new DependencyResolutionError(
-        `No service registration found for ${describeToken(token)}.`,
+        implementation as ServiceFactory<TService>,
       );
     }
 
-    return resolved;
-  }
-
-  public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
-    return this.rootProvider.resolveFromScope(token, this.scope, true);
-  }
-
-  public resolveRequired<TService>(token: InjectionToken<TService>): TService {
-    const resolved = this.rootProvider.resolveFromScope(token, this.scope, false);
-    if (typeof resolved === 'undefined') {
-      throw new DependencyResolutionError(
-        `No service registration found for ${describeToken(token)}.`,
+    if (lifetime !== ServiceLifetime.Singleton) {
+      throw new DependencyRegistrationError(
+        `Only singleton services can be registered with direct instances for ${describeToken(token)}.`,
       );
     }
 
-    return resolved;
+    return ServiceDescriptor.fromInstance(token, implementation);
   }
 
-  public resolveAll<TService>(token: InjectionToken<TService>): readonly TService[] {
-    return this.rootProvider.resolveAllFromScope(token, this.scope);
-  }
-
-  public createScope(): IServiceScope {
-    return this.rootProvider.createScope();
-  }
-
-  public dispose(): Promise<void> {
-    return this.rootProvider.dispose();
-  }
-
-  public Resolve<TService>(token: InjectionToken<TService>): TService {
-    return this.resolve(token);
-  }
-
-  public ResolveRequired<TService>(token: InjectionToken<TService>): TService {
-    return this.resolveRequired(token);
-  }
-
-  public ResolveAll<TService>(token: InjectionToken<TService>): readonly TService[] {
-    return this.resolveAll(token);
-  }
-}
-
-/**
- * Service provider implementation with scoped and singleton lifetimes.
- */
-export class ServiceProvider implements IServiceProvider {
-  private readonly singletonInstances = new Map<DescriptorEntry<unknown>, unknown>();
-  private readonly singletonDisposalOrder: unknown[] = [];
-  private readonly activeScopes = new Set<ServiceScopeImpl>();
-  private readonly rootScope: ServiceScopeImpl;
-  private disposed = false;
-
-  public constructor(
-    private readonly descriptors: ReadonlyMap<symbol, readonly DescriptorEntry<unknown>[]>,
-  ) {
-    this.rootScope = new ServiceScopeImpl(this);
-  }
-
-  public resolve<TService>(token: InjectionToken<TService>): TService {
-    const resolved = this.resolveFromScope(token, this.rootScope, false);
-    if (typeof resolved === 'undefined') {
-      throw new DependencyResolutionError(
-        `No service registration found for ${describeToken(token)}.`,
+  private ensureLifetime<TService>(
+    descriptor: IServiceDescriptor<TService>,
+    expected: ServiceLifetime,
+    methodName: string,
+  ): void {
+    if (descriptor.lifetime !== expected) {
+      throw new DependencyRegistrationError(
+        `${methodName} expects descriptor lifetime '${expected}' but received '${descriptor.lifetime}'.`,
       );
     }
-
-    return resolved;
   }
 
-  public tryResolve<TService>(token: InjectionToken<TService>): TService | undefined {
-    return this.resolveFromScope(token, this.rootScope, true);
+  private throwIfEquivalentDescriptorExists<TService>(
+    descriptor: IServiceDescriptor<TService>,
+  ): void {
+    const exists = this.descriptors.some((existing) => descriptorsEquivalent(existing, descriptor));
+    if (exists) {
+      throw new DependencyRegistrationError(
+        `Equivalent registration already exists for ${describeToken(descriptor.token)} ` +
+          `with lifetime '${descriptor.lifetime}'.`,
+      );
+    }
   }
 
-  public resolveRequired<TService>(token: InjectionToken<TService>): TService {
-    return this.resolve(token);
-  }
+  private findDuplicates(): readonly DuplicateRegistration[] {
+    const counts = new Map<symbol, number>();
 
-  public resolveAll<TService>(token: InjectionToken<TService>): readonly TService[] {
-    return this.resolveAllFromScope(token, this.rootScope);
-  }
-
-  public createScope(): IServiceScope {
-    this.assertNotDisposed();
-    const scope = new ServiceScopeImpl(this);
-    this.activeScopes.add(scope);
-    return scope;
-  }
-
-  public async dispose(): Promise<void> {
-    if (this.disposed) {
-      return;
+    for (const descriptor of this.descriptors) {
+      counts.set(descriptor.token, (counts.get(descriptor.token) ?? 0) + 1);
     }
 
-    this.disposed = true;
-
-    for (const scope of [...this.activeScopes]) {
-      await scope.dispose();
-    }
-
-    await this.rootScope.dispose();
-    await disposeInReverseOrder(this.singletonDisposalOrder);
-    this.singletonInstances.clear();
-  }
-
-  public createScopedProvider(scope: ServiceScopeImpl): IServiceProvider {
-    return new ScopedProvider(this, scope);
-  }
-
-  public detachScope(scope: ServiceScopeImpl): void {
-    this.activeScopes.delete(scope);
-  }
-
-  public resolveFromScope<TService>(
-    token: InjectionToken<TService>,
-    scope: ServiceScopeImpl,
-    optional: boolean,
-  ): TService | undefined {
-    this.assertNotDisposed();
-
-    const stack: symbol[] = [];
-    const value = this.resolveCore(token, scope, optional, stack);
-    return value;
-  }
-
-  public resolveAllFromScope<TService>(
-    token: InjectionToken<TService>,
-    scope: ServiceScopeImpl,
-  ): readonly TService[] {
-    this.assertNotDisposed();
-
-    const entries = this.descriptors.get(token) ?? [];
-    return entries.map((entry) => this.activate(entry as DescriptorEntry<TService>, scope, []));
-  }
-
-  private resolveCore<TService>(
-    token: InjectionToken<TService>,
-    scope: ServiceScopeImpl,
-    optional: boolean,
-    stack: symbol[],
-  ): TService | undefined {
-    const entries = this.descriptors.get(token);
-    if (!entries || entries.length === 0) {
-      if (optional) {
-        return undefined;
+    const duplicates: DuplicateRegistration[] = [];
+    for (const [token, count] of counts.entries()) {
+      if (count > 1) {
+        duplicates.push({ token, count });
       }
-
-      throw new DependencyResolutionError(
-        `No service registration found for ${describeToken(token)}.`,
-      );
     }
 
-    const descriptor = entries[entries.length - 1] as DescriptorEntry<TService>;
-    return this.activate(descriptor, scope, stack);
-  }
-
-  private activate<TService>(
-    descriptor: DescriptorEntry<TService>,
-    scope: ServiceScopeImpl,
-    stack: symbol[],
-  ): TService {
-    if (stack.includes(descriptor.token)) {
-      const path = [...stack, descriptor.token].map(describeToken).join(' -> ');
-      throw new DependencyResolutionError(
-        `Circular dependency detected during resolution: ${path}.`,
-      );
-    }
-
-    const nextStack = [...stack, descriptor.token];
-
-    if (descriptor.lifetime === ServiceLifetime.Singleton) {
-      if (this.singletonInstances.has(descriptor)) {
-        return this.singletonInstances.get(descriptor) as TService;
-      }
-
-      const created = this.createInstance(descriptor, scope, nextStack);
-      this.singletonInstances.set(descriptor, created);
-      this.singletonDisposalOrder.push(created);
-      return created;
-    }
-
-    if (descriptor.lifetime === ServiceLifetime.Scoped) {
-      return scope.getOrCreateScopedInstance(descriptor, () =>
-        this.createInstance(descriptor, scope, nextStack),
-      );
-    }
-
-    return this.createInstance(descriptor, scope, nextStack);
-  }
-
-  private createInstance<TService>(
-    descriptor: DescriptorEntry<TService>,
-    scope: ServiceScopeImpl,
-    stack: symbol[],
-  ): TService {
-    if (descriptor.implementationInstance) {
-      return descriptor.implementationInstance;
-    }
-
-    if (!descriptor.implementationType) {
-      return descriptor.implementationFactory(scope.provider);
-    }
-
-    return instantiateFromType(descriptor.implementationType, {
-      resolve: <TDependency>(token: InjectionToken<TDependency>): TDependency => {
-        const dependency = this.resolveCore(token, scope, false, stack);
-        if (typeof dependency === 'undefined') {
-          throw new DependencyResolutionError(
-            `Required dependency ${describeToken(token)} for ` +
-              `${describeToken(descriptor.token)} was not found.`,
-          );
-        }
-
-        return dependency;
-      },
-      tryResolve: <TDependency>(token: InjectionToken<TDependency>): TDependency | undefined =>
-        this.resolveCore(token, scope, true, stack),
-      resolveRequired: <TDependency>(token: InjectionToken<TDependency>): TDependency => {
-        const dependency = this.resolveCore(token, scope, false, stack);
-        if (typeof dependency === 'undefined') {
-          throw new DependencyResolutionError(
-            `Required dependency ${describeToken(token)} for ` +
-              `${describeToken(descriptor.token)} was not found.`,
-          );
-        }
-        return dependency;
-      },
-      resolveAll: <TDependency>(token: InjectionToken<TDependency>): readonly TDependency[] =>
-        this.resolveAllFromScope(token, scope),
-      createScope: (): IServiceScope => this.createScope(),
-      dispose: async (): Promise<void> => this.dispose(),
-      Resolve: <TDependency>(token: InjectionToken<TDependency>): TDependency => {
-        const dependency = this.resolveCore(token, scope, false, stack);
-        if (typeof dependency === 'undefined') {
-          throw new DependencyResolutionError(
-            `Required dependency ${describeToken(token)} for ` +
-              `${describeToken(descriptor.token)} was not found.`,
-          );
-        }
-        return dependency;
-      },
-      ResolveRequired: <TDependency>(token: InjectionToken<TDependency>): TDependency => {
-        const dependency = this.resolveCore(token, scope, false, stack);
-        if (typeof dependency === 'undefined') {
-          throw new DependencyResolutionError(
-            `Required dependency ${describeToken(token)} for ` +
-              `${describeToken(descriptor.token)} was not found.`,
-          );
-        }
-        return dependency;
-      },
-      ResolveAll: <TDependency>(token: InjectionToken<TDependency>): readonly TDependency[] =>
-        this.resolveAllFromScope(token, scope),
-    });
-  }
-
-  private assertNotDisposed(): void {
-    if (this.disposed) {
-      throw new DependencyResolutionError('Service provider has been disposed.');
-    }
-  }
-
-  public Resolve<TService>(token: InjectionToken<TService>): TService {
-    return this.resolve(token);
-  }
-
-  public ResolveRequired<TService>(token: InjectionToken<TService>): TService {
-    return this.resolveRequired(token);
-  }
-
-  public ResolveAll<TService>(token: InjectionToken<TService>): readonly TService[] {
-    return this.resolveAll(token);
+    return duplicates;
   }
 }
 
@@ -910,137 +613,114 @@ export class ServiceProvider implements IServiceProvider {
  * Creates a typed injection token from a string key.
  */
 export function createInjectionToken<TService>(key: string): InjectionToken<TService> {
+  if (key.trim().length === 0) {
+    throw new DependencyRegistrationError('Injection token key must not be empty.');
+  }
+
   return Symbol(key) as InjectionToken<TService>;
 }
 
-function detectCircularDependencies(
-  descriptorMap: ReadonlyMap<symbol, readonly DescriptorEntry<unknown>[]>,
-): readonly symbol[][] {
-  const cycles: symbol[][] = [];
-  const visiting = new Set<symbol>();
-  const visited = new Set<symbol>();
-
-  const visit = (token: symbol, path: symbol[]): void => {
-    if (visiting.has(token)) {
-      const startIndex = path.indexOf(token);
-      if (startIndex >= 0) {
-        cycles.push([...path.slice(startIndex), token]);
-      }
-      return;
-    }
-
-    if (visited.has(token)) {
-      return;
-    }
-
-    visiting.add(token);
-    const descriptors = descriptorMap.get(token) ?? [];
-    for (const descriptor of descriptors) {
-      if (!descriptor.implementationType?.inject) {
-        continue;
-      }
-
-      for (const dependency of descriptor.implementationType.inject) {
-        visit(dependency, [...path, token]);
-      }
-    }
-
-    visiting.delete(token);
-    visited.add(token);
-  };
-
-  for (const token of descriptorMap.keys()) {
-    visit(token, []);
-  }
-
-  return cycles;
-}
-
-function instantiateFromType<TService>(
-  implementationType: ServiceType<TService>,
-  provider: IServiceProvider,
-): TService {
-  const injectTokens = implementationType.inject ?? [];
-  if (implementationType.length > 0 && injectTokens.length === 0) {
-    throw new DependencyResolutionError(
-      `Cannot construct ${implementationType.name || 'anonymous type'} without static inject tokens.`,
-    );
-  }
-
-  if (injectTokens.length < implementationType.length) {
-    throw new DependencyResolutionError(
-      `Inject token count (${injectTokens.length}) is smaller than constructor parameter count ` +
-        `(${implementationType.length}) for ${implementationType.name || 'anonymous type'}.`,
-    );
-  }
-
-  const dependencies = injectTokens.map((token) => provider.resolveRequired(token));
-  return new implementationType(...dependencies);
-}
-
-function isServiceType<TService>(
-  implementation: ServiceImplementation<TService>,
-): implementation is ServiceType<TService> {
-  if (typeof implementation !== 'function') {
+function isDescriptor<TService>(value: unknown): value is IServiceDescriptor<TService> {
+  if (!value || typeof value !== 'object') {
     return false;
   }
 
-  const withInject = implementation as ServiceType<TService>;
-  if (Array.isArray(withInject.inject)) {
+  return (
+    'token' in value &&
+    'lifetime' in value &&
+    'registration' in value &&
+    typeof (value as { token?: unknown }).token === 'symbol'
+  );
+}
+
+function isServiceType<TService>(value: unknown): value is ServiceType<TService> {
+  if (typeof value !== 'function') {
+    return false;
+  }
+
+  const asString = Function.prototype.toString.call(value);
+  return asString.startsWith('class ');
+}
+
+function descriptorsEquivalent(
+  left: IServiceDescriptor<unknown>,
+  right: IServiceDescriptor<unknown>,
+): boolean {
+  if (left.token !== right.token || left.lifetime !== right.lifetime) {
+    return false;
+  }
+
+  const leftRegistration = left.registration;
+  const rightRegistration = right.registration;
+  if (leftRegistration.kind !== rightRegistration.kind) {
+    return false;
+  }
+
+  if (leftRegistration.kind === 'self') {
     return true;
   }
 
-  const source = Function.prototype.toString.call(implementation);
-  return source.startsWith('class ');
+  if (leftRegistration.kind === 'factory' && rightRegistration.kind === 'factory') {
+    return leftRegistration.factory === rightRegistration.factory;
+  }
+
+  if (leftRegistration.kind === 'type' && rightRegistration.kind === 'type') {
+    return leftRegistration.type === rightRegistration.type;
+  }
+
+  if (leftRegistration.kind === 'instance' && rightRegistration.kind === 'instance') {
+    return leftRegistration.instance === rightRegistration.instance;
+  }
+
+  return false;
+}
+
+function assertDescriptor<TService>(descriptor: IServiceDescriptor<TService>): void {
+  if (!descriptor || typeof descriptor !== 'object') {
+    throw new DependencyRegistrationError('Descriptor must be a non-null object.');
+  }
+
+  assertToken(descriptor.token, 'register');
+
+  if (!Object.values(ServiceLifetime).includes(descriptor.lifetime)) {
+    throw new DependencyRegistrationError(
+      `Descriptor lifetime '${String(descriptor.lifetime)}' is invalid.`,
+    );
+  }
+
+  if (!descriptor.registration || typeof descriptor.registration !== 'object') {
+    throw new DependencyRegistrationError('Descriptor registration metadata is required.');
+  }
+
+  switch (descriptor.registration.kind) {
+    case 'self':
+      return;
+    case 'factory':
+      if (typeof descriptor.registration.factory !== 'function') {
+        throw new DependencyRegistrationError('Factory registration requires a function value.');
+      }
+      return;
+    case 'type':
+      if (!isServiceType(descriptor.registration.type)) {
+        throw new DependencyRegistrationError('Type registration requires a class constructor.');
+      }
+      return;
+    case 'instance':
+      if (typeof descriptor.registration.instance === 'undefined') {
+        throw new DependencyRegistrationError('Instance registration requires a defined value.');
+      }
+      return;
+    default:
+      throw new DependencyRegistrationError('Unknown registration kind.');
+  }
+}
+
+function assertToken(token: symbol, operation: string): void {
+  if (typeof token !== 'symbol') {
+    throw new DependencyRegistrationError(`${operation} requires a valid symbol token.`);
+  }
 }
 
 function describeToken(token: symbol): string {
   return token.description ? `Symbol(${token.description})` : token.toString();
-}
-
-async function disposeInReverseOrder(values: readonly unknown[]): Promise<void> {
-  for (let index = values.length - 1; index >= 0; index -= 1) {
-    await disposeOne(values[index]);
-  }
-}
-
-async function disposeOne(value: unknown): Promise<void> {
-  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
-    return;
-  }
-
-  const maybeSyncDispose = value as {
-    dispose?: () => void | Promise<void>;
-    asyncDispose?: () => Promise<void>;
-    [key: symbol]: unknown;
-  };
-
-  if (typeof maybeSyncDispose.asyncDispose === 'function') {
-    await maybeSyncDispose.asyncDispose();
-    return;
-  }
-
-  if (typeof maybeSyncDispose.dispose === 'function') {
-    await maybeSyncDispose.dispose();
-    return;
-  }
-
-  const symbolWithAsyncDispose = (Symbol as unknown as { asyncDispose?: symbol }).asyncDispose;
-  if (symbolWithAsyncDispose) {
-    const asyncDisposeMember = maybeSyncDispose[symbolWithAsyncDispose];
-    if (typeof asyncDisposeMember === 'function') {
-      const asyncDisposable = asyncDisposeMember as () => Promise<void>;
-      await asyncDisposable.call(value);
-      return;
-    }
-  }
-
-  const symbolWithDispose = (Symbol as unknown as { dispose?: symbol }).dispose;
-  if (symbolWithDispose) {
-    const disposeMember = maybeSyncDispose[symbolWithDispose];
-    if (typeof disposeMember === 'function') {
-      const disposable = disposeMember as () => void | Promise<void>;
-      await disposable.call(value);
-    }
-  }
 }

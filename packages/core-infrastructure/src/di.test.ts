@@ -3,287 +3,212 @@ import { describe, expect, it } from 'vitest';
 import {
   createInjectionToken,
   DependencyRegistrationError,
-  DependencyResolutionError,
-  type InjectionToken,
   ServiceCollection,
   ServiceDescriptor,
   ServiceLifetime,
+  type ServiceFactory,
 } from './di';
 
-class DisposableTracker {
-  public readonly id: string;
-
-  public constructor(
-    id: string,
-    private readonly target: string[],
-  ) {
-    this.id = id;
-  }
-
-  public dispose(): void {
-    this.target.push(this.id);
-  }
+class TestService {
+  public readonly id = 'service';
 }
 
-class AsyncDisposableTracker {
-  public readonly id: string;
-
-  public constructor(
-    id: string,
-    private readonly target: string[],
-  ) {
-    this.id = id;
-  }
-
-  public async asyncDispose(): Promise<void> {
-    this.target.push(this.id);
-  }
+class TestImplementation extends TestService {
+  public readonly implementationId = 'impl';
 }
 
-const CLOCK_TOKEN = createInjectionToken<{ now(): number }>('clock');
-const REPOSITORY_TOKEN = createInjectionToken<{ clock: { now(): number } }>('repository');
-const SERVICE_TOKEN = createInjectionToken<{ repository: { clock: { now(): number } } }>('service');
-const STRING_TOKEN = createInjectionToken<string>('string');
-
-class ClockService {
-  public now(): number {
-    return Date.now();
-  }
-}
-
-class RepositoryService {
-  public static readonly inject: readonly InjectionToken<unknown>[] = [CLOCK_TOKEN];
-
-  public constructor(public readonly clock: { now(): number }) {}
-}
-
-class AgentService {
-  public static readonly inject: readonly InjectionToken<unknown>[] = [REPOSITORY_TOKEN];
-
-  public constructor(public readonly repository: { clock: { now(): number } }) {}
-}
-
-class CircularA {
-  public static inject: readonly InjectionToken<unknown>[] = [];
-}
-
-class CircularB {
-  public static inject: readonly InjectionToken<unknown>[] = [];
-}
-
-class MissingInjectParameter {
-  public constructor(public readonly value: string) {}
-}
-
-describe('dependency injection framework', () => {
-  it('resolves singletons as one instance across root and child scopes', () => {
+describe('service collection', () => {
+  it('registers singleton metadata using type, factory, self, and instance overloads', () => {
     const collection = new ServiceCollection();
-    const token = createInjectionToken<{ id: string }>('singleton');
-    let counter = 0;
+    const typeToken = createInjectionToken<TestService>('singleton-type');
+    const factoryToken = createInjectionToken<TestService>('singleton-factory');
+    const selfToken = createInjectionToken<TestService>('singleton-self');
+    const instanceToken = createInjectionToken<TestService>('singleton-instance');
 
-    collection.AddSingleton(token, () => {
-      counter += 1;
-      return { id: `singleton-${counter}` };
+    const factory: ServiceFactory<TestService> = () => new TestService();
+    const instance = new TestService();
+
+    collection.AddSingleton<TestService, TestImplementation>(typeToken, TestImplementation);
+    collection.AddSingleton(factoryToken, factory);
+    collection.AddSingleton(selfToken);
+    collection.AddSingleton(instanceToken, instance);
+
+    const descriptors = collection.Enumerate();
+
+    expect(collection.Count).toBe(4);
+    expect(descriptors[0]).toMatchObject({ token: typeToken, lifetime: ServiceLifetime.Singleton });
+    expect(descriptors[1]).toMatchObject({
+      token: factoryToken,
+      lifetime: ServiceLifetime.Singleton,
+    });
+    expect(descriptors[2]).toMatchObject({ token: selfToken, lifetime: ServiceLifetime.Singleton });
+    expect(descriptors[3]).toMatchObject({
+      token: instanceToken,
+      lifetime: ServiceLifetime.Singleton,
     });
 
-    const provider = collection.buildServiceProvider();
-    const scope = provider.createScope();
-
-    const first = provider.ResolveRequired(token);
-    const second = provider.ResolveRequired(token);
-    const third = scope.provider.ResolveRequired(token);
-
-    expect(first).toBe(second);
-    expect(second).toBe(third);
+    expect(descriptors[0]?.registration.kind).toBe('type');
+    expect(descriptors[1]?.registration.kind).toBe('factory');
+    expect(descriptors[2]?.registration.kind).toBe('self');
+    expect(descriptors[3]?.registration.kind).toBe('instance');
   });
 
-  it('resolves scoped services per-scope and isolates child scopes', () => {
+  it('registers scoped metadata using type, factory, and self overloads', () => {
     const collection = new ServiceCollection();
-    const token = createInjectionToken<{ id: string }>('scoped');
-    let counter = 0;
+    const typeToken = createInjectionToken<TestService>('scoped-type');
+    const factoryToken = createInjectionToken<TestService>('scoped-factory');
+    const selfToken = createInjectionToken<TestService>('scoped-self');
 
-    collection.AddScoped(token, () => {
-      counter += 1;
-      return { id: `scoped-${counter}` };
-    });
+    collection.AddScoped<TestService, TestImplementation>(typeToken, TestImplementation);
+    collection.AddScoped(factoryToken, () => new TestService());
+    collection.AddScoped(selfToken);
 
-    const provider = collection.buildServiceProvider();
-    const scopeOne = provider.createScope();
-    const scopeTwo = provider.createScope();
+    const descriptors = collection.Enumerate();
 
-    const rootA = provider.ResolveRequired(token);
-    const rootB = provider.ResolveRequired(token);
-    const oneA = scopeOne.provider.ResolveRequired(token);
-    const oneB = scopeOne.provider.ResolveRequired(token);
-    const twoA = scopeTwo.provider.ResolveRequired(token);
-
-    expect(rootA).toBe(rootB);
-    expect(oneA).toBe(oneB);
-    expect(oneA).not.toBe(twoA);
-    expect(rootA).not.toBe(oneA);
-  });
-
-  it('resolves transients as new instances each time', () => {
-    const collection = new ServiceCollection();
-    const token = createInjectionToken<{ id: number }>('transient');
-    let counter = 0;
-
-    collection.AddTransient(token, () => ({ id: ++counter }));
-    const provider = collection.buildServiceProvider();
-
-    const first = provider.ResolveRequired(token);
-    const second = provider.ResolveRequired(token);
-
-    expect(first).not.toBe(second);
-    expect(first.id).toBe(1);
-    expect(second.id).toBe(2);
-  });
-
-  it('supports constructor injection with nested dependencies', () => {
-    const collection = new ServiceCollection();
-    collection.AddSingleton(CLOCK_TOKEN, ClockService);
-    collection.AddTransient(REPOSITORY_TOKEN, RepositoryService);
-    collection.AddTransient(SERVICE_TOKEN, AgentService);
-
-    const provider = collection.buildServiceProvider();
-    const resolved = provider.ResolveRequired(SERVICE_TOKEN);
-
-    expect(resolved.repository.clock).toBeInstanceOf(ClockService);
-  });
-
-  it('supports Resolve, ResolveRequired, tryResolve and ResolveAll', () => {
-    const collection = new ServiceCollection();
-    collection.AddTransient(STRING_TOKEN, () => 'first');
-    collection.AddTransient(STRING_TOKEN, () => 'second');
-
-    const provider = collection.buildServiceProvider({ validateOnBuild: true });
-    expect(provider.Resolve(STRING_TOKEN)).toBe('second');
-    expect(provider.tryResolve(STRING_TOKEN)).toBe('second');
-    expect(provider.ResolveRequired(STRING_TOKEN)).toBe('second');
-    expect(provider.ResolveAll(STRING_TOKEN)).toEqual(['first', 'second']);
-  });
-
-  it('supports AddInstance, TryAdd, Replace, Remove and Clear registration operations', () => {
-    const token = createInjectionToken<{ value: string }>('mutable');
-    const collection = new ServiceCollection();
-
-    collection.AddInstance(token, { value: 'instance' });
-    const tryAddResult = collection.TryAdd(
-      ServiceDescriptor.fromFactory(token, ServiceLifetime.Transient, () => ({ value: 'ignored' })),
-    );
-    expect(tryAddResult).toBe(false);
-
-    collection.Replace(
-      ServiceDescriptor.fromFactory(token, ServiceLifetime.Transient, () => ({
-        value: 'replacement',
-      })),
-    );
-
-    let provider = collection.buildServiceProvider();
-    expect(provider.ResolveRequired(token).value).toBe('replacement');
-
-    expect(collection.Remove(token)).toBe(true);
-    collection.Clear();
-
-    provider = collection.buildServiceProvider({ validateOnBuild: false });
-    expect(provider.tryResolve(token)).toBeUndefined();
-  });
-
-  it('detects missing dependencies and constructor parameter metadata mismatches', () => {
-    const token = createInjectionToken<MissingInjectParameter>('missing-inject');
-    const collection = new ServiceCollection();
-    collection.AddTransient(token, MissingInjectParameter);
-
-    const report = collection.validate();
-    expect(report.valid).toBe(false);
-    expect(report.issues.some((issue) => issue.code === 'di.constructor_injection_missing')).toBe(
+    expect(descriptors).toHaveLength(3);
+    expect(descriptors.every((descriptor) => descriptor.lifetime === ServiceLifetime.Scoped)).toBe(
       true,
     );
   });
 
-  it('detects circular graphs at validation time and fails build', () => {
-    const tokenA = createInjectionToken<CircularA>('circular-a');
-    const tokenB = createInjectionToken<CircularB>('circular-b');
-    CircularA.inject = [tokenB];
-    CircularB.inject = [tokenA];
-
+  it('registers transient metadata using type, factory, and self overloads', () => {
     const collection = new ServiceCollection();
-    collection.AddTransient(tokenA, CircularA);
-    collection.AddTransient(tokenB, CircularB);
+    const typeToken = createInjectionToken<TestService>('transient-type');
+    const factoryToken = createInjectionToken<TestService>('transient-factory');
+    const selfToken = createInjectionToken<TestService>('transient-self');
 
-    const report = collection.validate();
-    expect(report.issues.some((issue) => issue.code === 'di.circular_dependency')).toBe(true);
-    expect(() => collection.buildServiceProvider()).toThrow(DependencyRegistrationError);
+    collection.AddTransient<TestService, TestImplementation>(typeToken, TestImplementation);
+    collection.AddTransient(factoryToken, () => new TestService());
+    collection.AddTransient(selfToken);
+
+    const descriptors = collection.Enumerate();
+
+    expect(descriptors).toHaveLength(3);
+    expect(
+      descriptors.every((descriptor) => descriptor.lifetime === ServiceLifetime.Transient),
+    ).toBe(true);
   });
 
-  it('throws meaningful exceptions for required unresolved services', () => {
-    const provider = new ServiceCollection().buildServiceProvider({ validateOnBuild: false });
-    const token = createInjectionToken<{ value: string }>('missing');
+  it('adds singleton instance metadata via AddInstance', () => {
+    const collection = new ServiceCollection();
+    const token = createInjectionToken<TestService>('instance');
+    const instance = new TestService();
 
-    expect(() => provider.ResolveRequired(token)).toThrow(DependencyResolutionError);
+    collection.AddInstance(token, instance);
+
+    const descriptor = collection.Enumerate()[0];
+    expect(descriptor?.lifetime).toBe(ServiceLifetime.Singleton);
+    expect(descriptor?.registration.kind).toBe('instance');
   });
 
-  it('disposes scoped and singleton instances with deterministic reverse-order cleanup', async () => {
-    const disposalOrder: string[] = [];
-    const scopedTokenA = createInjectionToken<DisposableTracker>('scoped-a');
-    const scopedTokenB = createInjectionToken<DisposableTracker>('scoped-b');
-    const singletonTokenA = createInjectionToken<DisposableTracker>('singleton-a');
-    const singletonTokenB = createInjectionToken<AsyncDisposableTracker>('singleton-b');
+  it('supports TryAdd semantics without replacing existing registrations', () => {
+    const token = createInjectionToken<TestService>('try-add');
+    const collection = new ServiceCollection();
+
+    const first = ServiceDescriptor.self(token, ServiceLifetime.Singleton);
+    const second = ServiceDescriptor.self(token, ServiceLifetime.Transient);
+
+    expect(collection.TryAdd(first)).toBe(true);
+    expect(collection.TryAdd(second)).toBe(false);
+    expect(collection.Count).toBe(1);
+    expect(collection.Enumerate()[0]?.lifetime).toBe(ServiceLifetime.Singleton);
+  });
+
+  it('replaces all registrations for a token', () => {
+    const token = createInjectionToken<TestService>('replace');
+    const collection = new ServiceCollection();
+
+    collection.AddTransient(token, () => new TestService());
+    collection.AddScoped(token, () => new TestService());
+
+    collection.Replace(ServiceDescriptor.self(token, ServiceLifetime.Singleton));
+
+    expect(collection.Count).toBe(1);
+    expect(collection.Enumerate()[0]?.lifetime).toBe(ServiceLifetime.Singleton);
+  });
+
+  it('removes registrations by token', () => {
+    const tokenA = createInjectionToken<TestService>('remove-a');
+    const tokenB = createInjectionToken<TestService>('remove-b');
+    const collection = new ServiceCollection();
+
+    collection.AddTransient(tokenA, () => new TestService());
+    collection.AddTransient(tokenA, () => new TestService());
+    collection.AddTransient(tokenB, () => new TestService());
+
+    expect(collection.Remove(tokenA)).toBe(true);
+    expect(collection.Count).toBe(1);
+    expect(collection.Contains(tokenA)).toBe(false);
+    expect(collection.Contains(tokenB)).toBe(true);
+  });
+
+  it('clears all registrations', () => {
+    const collection = new ServiceCollection();
+    collection.AddTransient(createInjectionToken<TestService>('clear-a'), () => new TestService());
+    collection.AddScoped(createInjectionToken<TestService>('clear-b'), () => new TestService());
+
+    collection.Clear();
+
+    expect(collection.Count).toBe(0);
+    expect(collection.Enumerate()).toEqual([]);
+  });
+
+  it('enumerates registrations in insertion order', () => {
+    const tokenA = createInjectionToken<TestService>('enumerate-a');
+    const tokenB = createInjectionToken<TestService>('enumerate-b');
+    const tokenC = createInjectionToken<TestService>('enumerate-c');
 
     const collection = new ServiceCollection();
-    collection.AddScoped(scopedTokenA, () => new DisposableTracker('scoped-a', disposalOrder));
-    collection.AddScoped(scopedTokenB, () => new DisposableTracker('scoped-b', disposalOrder));
-    collection.AddSingleton(
-      singletonTokenA,
-      () => new DisposableTracker('singleton-a', disposalOrder),
+    collection.AddTransient(tokenA, () => new TestService());
+    collection.AddScoped(tokenB, () => new TestService());
+    collection.AddSingleton(tokenC, () => new TestService());
+
+    const tokens = collection.Enumerate().map((descriptor) => descriptor.token);
+    expect(tokens).toEqual([tokenA, tokenB, tokenC]);
+  });
+
+  it('reports duplicate token registrations via validation', () => {
+    const token = createInjectionToken<TestService>('duplicate-token');
+    const collection = new ServiceCollection();
+
+    collection.AddTransient(token, () => new TestService());
+    collection.AddScoped(token, () => new TestService());
+
+    const report = collection.Validate();
+    expect(report.valid).toBe(false);
+    expect(report.duplicates).toHaveLength(1);
+    expect(report.duplicates[0]?.token).toBe(token);
+    expect(report.duplicates[0]?.count).toBe(2);
+  });
+
+  it('throws meaningful exceptions for invalid registration arguments', () => {
+    const collection = new ServiceCollection();
+    const token = createInjectionToken<TestService>('invalid-input');
+
+    expect(() => collection.AddInstance(token, undefined as unknown as TestService)).toThrow(
+      DependencyRegistrationError,
     );
-    collection.AddSingleton(
-      singletonTokenB,
-      () => new AsyncDisposableTracker('singleton-b', disposalOrder),
+
+    expect(() => collection.register(null as unknown as ServiceDescriptor<TestService>)).toThrow(
+      DependencyRegistrationError,
     );
 
-    const provider = collection.buildServiceProvider();
-    const scope = provider.createScope();
-
-    scope.provider.ResolveRequired(scopedTokenA);
-    scope.provider.ResolveRequired(scopedTokenB);
-    provider.ResolveRequired(singletonTokenA);
-    provider.ResolveRequired(singletonTokenB);
-
-    await scope.dispose();
-    await provider.dispose();
-
-    expect(disposalOrder).toEqual(['scoped-b', 'scoped-a', 'singleton-b', 'singleton-a']);
-  });
-
-  it('supports concurrent singleton resolution safely', async () => {
-    const token = createInjectionToken<{ id: string }>('concurrent-singleton');
-    const collection = new ServiceCollection();
-    let counter = 0;
-
-    collection.AddSingleton(token, () => {
-      counter += 1;
-      return { id: `service-${counter}` };
-    });
-
-    const provider = collection.buildServiceProvider();
-    const results = await Promise.all(
-      Array.from({ length: 50 }, async () => provider.ResolveRequired(token)),
+    expect(() => collection.Contains(null as unknown as symbol)).toThrow(
+      DependencyRegistrationError,
     );
 
-    const baseline = results[0];
-    expect(results.every((item) => item === baseline)).toBe(true);
-    expect(counter).toBe(1);
+    expect(() => collection.AddScoped(token, {} as unknown as ServiceFactory<TestService>)).toThrow(
+      DependencyRegistrationError,
+    );
   });
 
-  it('reports duplicate registrations when requested', () => {
-    const token = createInjectionToken<string>('duplicate');
+  it('throws duplicate detection exception for equivalent descriptor registration', () => {
+    const token = createInjectionToken<TestService>('equivalent');
     const collection = new ServiceCollection();
-    collection.AddTransient(token, () => 'a');
-    collection.AddTransient(token, () => 'b');
+    const factory = (): TestService => new TestService();
 
-    expect(collection.getDuplicateRegistrations()).toEqual([token]);
-    const report = collection.validate({ throwOnDuplicateRegistrations: true });
-    expect(report.issues.some((issue) => issue.code === 'di.duplicate_registration')).toBe(true);
+    collection.AddSingleton(token, factory);
+
+    expect(() => collection.AddSingleton(token, factory)).toThrow(DependencyRegistrationError);
   });
 });
