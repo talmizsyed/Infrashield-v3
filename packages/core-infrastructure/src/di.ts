@@ -39,6 +39,7 @@ export const Transient: ServiceLifetime = ServiceLifetime.Transient;
  */
 export interface ServiceType<TService> {
   new (...args: readonly unknown[]): TService;
+  readonly __injectionTokens?: readonly unknown[];
 }
 
 /**
@@ -266,6 +267,149 @@ export class ResolutionContext {
 }
 
 /**
+ * Constructor dependency metadata selection helper.
+ */
+export class ConstructorSelection {
+  public constructor(
+    public readonly implementation: new (...args: readonly unknown[]) => unknown,
+    public readonly parameters: readonly ParameterResolver[],
+  ) {}
+}
+
+/**
+ * Parameter dependency resolver for constructor injection.
+ */
+export class ParameterResolver {
+  public constructor(
+    public readonly index: number,
+    public readonly token: InjectionToken<unknown>,
+  ) {}
+}
+
+/**
+ * Dependency graph view used by constructor injection.
+ */
+export class DependencyGraph {
+  public constructor(
+    public readonly nodes: readonly {
+      token: symbol;
+      descriptor: IServiceDescriptor<unknown>;
+    }[],
+  ) {}
+}
+
+/**
+ * Resolves constructor dependencies for registered implementation types.
+ */
+export class ConstructorResolver {
+  public resolve<TService>(
+    implementationType: ServiceType<TService>,
+    provider: IServiceProvider,
+    token: symbol,
+  ): TService {
+    const selection = this.selectConstructor(implementationType, token);
+    const values = selection.parameters.map((parameter) => {
+      const resolvedValue = provider.Resolve(parameter.token as InjectionToken<unknown>);
+      return resolvedValue;
+    });
+
+    return new (selection.implementation as new (...args: readonly unknown[]) => TService)(
+      ...values,
+    );
+  }
+
+  public selectConstructor<TService>(
+    implementationType: ServiceType<TService>,
+    token: symbol,
+  ): ConstructorSelection {
+    const metadataTokens = implementationType.__injectionTokens;
+    if (metadataTokens && metadataTokens.length > 0) {
+      const constructorArity = implementationType.length;
+      if (metadataTokens.length !== constructorArity) {
+        throw new ResolutionException(
+          `Constructor metadata for ${describeToken(token)} must declare ${constructorArity} dependency token(s).`,
+          token,
+        );
+      }
+
+      const parameters = metadataTokens.map((metadataToken, index) => {
+        if (typeof metadataToken !== 'symbol') {
+          throw new ResolutionException(
+            `Constructor metadata for ${describeToken(token)} must contain symbol tokens.`,
+            token,
+          );
+        }
+
+        return new ParameterResolver(index, metadataToken as InjectionToken<unknown>);
+      });
+
+      return new ConstructorSelection(implementationType, parameters);
+    }
+
+    const constructor = implementationType.prototype?.constructor;
+    if (typeof constructor !== 'function') {
+      throw new ResolutionException(
+        `Unable to determine constructor for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    const parameterTokens: ParameterResolver[] = [];
+    const parameterNames = constructor
+      .toString()
+      .slice(constructor.toString().indexOf('(') + 1, constructor.toString().indexOf(')'))
+      .split(',')
+      .map((value: string) => value.trim())
+      .filter(Boolean);
+
+    for (let index = 0; index < constructor.length; index += 1) {
+      const name = parameterNames[index] ?? `arg${index + 1}`;
+      const tokenName = `${token.description ?? 'service'}:${name}`;
+      parameterTokens.push(new ParameterResolver(index, createInjectionToken(tokenName)));
+    }
+
+    return new ConstructorSelection(constructor, parameterTokens);
+  }
+
+  public createDependencyGraph<TService>(
+    implementationType: ServiceType<TService>,
+    provider: IServiceProvider,
+    token: symbol,
+  ): DependencyGraph {
+    const selection = this.selectConstructor(implementationType, token);
+    const nodes = selection.parameters.map((parameter) => ({
+      token: parameter.token,
+      descriptor: this.resolveDescriptorForToken(parameter.token, provider),
+    }));
+
+    return new DependencyGraph(nodes);
+  }
+
+  private resolveDescriptorForToken(
+    token: InjectionToken<unknown>,
+    provider: IServiceProvider,
+  ): IServiceDescriptor<unknown> {
+    const descriptors = (provider as ServiceProvider).findDescriptors(token);
+    if (descriptors.length === 0) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    const descriptor = descriptors[0];
+    if (!descriptor) {
+      throw new ResolutionException(
+        `No service registration found for ${describeToken(token)}.`,
+        token,
+      );
+    }
+
+    return descriptor;
+  }
+}
+
+/**
  * Lightweight resolver facade that delegates to a provider.
  */
 export class ServiceResolver implements IServiceResolver {
@@ -414,8 +558,8 @@ export class ServiceProvider implements IServiceProvider {
       case 'instance':
         return registration.instance as TService;
       case 'type': {
-        const implementationType = registration.type as unknown as new () => TService;
-        return new implementationType();
+        const implementationType = registration.type as ServiceType<TService>;
+        return this.resolveConstructor<TService>(implementationType, context.token);
       }
       case 'self':
         throw new ResolutionException(
@@ -430,7 +574,23 @@ export class ServiceProvider implements IServiceProvider {
     }
   }
 
-  private findDescriptors(token: symbol): readonly IServiceDescriptor<unknown>[] {
+  private resolveConstructor<TService>(
+    implementationType: ServiceType<TService>,
+    token: InjectionToken<TService>,
+  ): TService {
+    const resolver = new ConstructorResolver();
+    const selection = resolver.selectConstructor(implementationType, token);
+    const values = selection.parameters.map((parameter) => {
+      const dependencyToken = parameter.token as InjectionToken<unknown>;
+      const resolved = this.Resolve(dependencyToken as InjectionToken<TService>);
+      return resolved;
+    });
+
+    const constructor = selection.implementation as new (...args: readonly unknown[]) => TService;
+    return new constructor(...values);
+  }
+
+  public findDescriptors(token: symbol): readonly IServiceDescriptor<unknown>[] {
     return this.collection.Enumerate().filter((descriptor) => descriptor.token === token);
   }
 

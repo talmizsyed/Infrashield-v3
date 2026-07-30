@@ -9,6 +9,7 @@ import {
   ServiceLifetime,
   ServiceProvider,
   type ServiceFactory,
+  type ServiceType,
 } from './di';
 
 class TestService {
@@ -17,6 +18,47 @@ class TestService {
 
 class TestImplementation extends TestService {
   public readonly implementationId = 'impl';
+}
+
+class LeafDependency {
+  public readonly id = 'leaf';
+}
+
+class MiddleDependency {
+  public constructor(public readonly leaf: LeafDependency) {}
+}
+
+class RootDependency {
+  public constructor(
+    public readonly middle: MiddleDependency,
+    public readonly leaf: LeafDependency,
+  ) {}
+}
+
+class ConstructorConsumer {
+  public constructor(public readonly dependency: RootDependency) {}
+}
+
+class MultiDependencyConsumer {
+  public constructor(
+    public readonly first: LeafDependency,
+    public readonly second: MiddleDependency,
+  ) {}
+}
+
+class InvalidConstructorConsumer {
+  public constructor(
+    public readonly first: LeafDependency,
+    public readonly second: LeafDependency,
+  ) {}
+}
+
+function annotateConstructorDependencies<TService>(
+  implementationType: ServiceType<TService>,
+  tokens: readonly unknown[],
+): ServiceType<TService> {
+  Object.assign(implementationType, { __injectionTokens: tokens });
+  return implementationType;
 }
 
 describe('service collection', () => {
@@ -331,5 +373,119 @@ describe('service provider', () => {
 
     expect(factoryCalls).toBe(1);
     expect(new Set(results).size).toBe(1);
+  });
+
+  it('resolves constructor dependencies recursively', () => {
+    const leafToken = createInjectionToken<LeafDependency>('leaf');
+    const middleToken = createInjectionToken<MiddleDependency>('middle');
+    const rootToken = createInjectionToken<RootDependency>('root');
+    const consumerToken = createInjectionToken<ConstructorConsumer>('consumer');
+
+    const collection = new ServiceCollection();
+    collection.AddSingleton(leafToken, LeafDependency);
+    collection.AddTransient(
+      middleToken,
+      annotateConstructorDependencies(MiddleDependency, [leafToken]),
+    );
+    collection.AddTransient(
+      rootToken,
+      annotateConstructorDependencies(RootDependency, [middleToken, leafToken]),
+    );
+    collection.AddTransient(
+      consumerToken,
+      annotateConstructorDependencies(ConstructorConsumer, [rootToken]),
+    );
+
+    const provider = new ServiceProvider(collection);
+    const consumer = provider.Resolve(consumerToken);
+
+    expect(consumer).toBeInstanceOf(ConstructorConsumer);
+    expect(consumer.dependency).toBeInstanceOf(RootDependency);
+    expect(consumer.dependency.middle).toBeInstanceOf(MiddleDependency);
+    expect(consumer.dependency.middle.leaf).toBeInstanceOf(LeafDependency);
+    expect(consumer.dependency.leaf).toBeInstanceOf(LeafDependency);
+  });
+
+  it('resolves multiple constructor dependencies', () => {
+    const leafToken = createInjectionToken<LeafDependency>('multi-leaf');
+    const middleToken = createInjectionToken<MiddleDependency>('multi-middle');
+    const consumerToken = createInjectionToken<MultiDependencyConsumer>('multi-consumer');
+
+    const collection = new ServiceCollection();
+    collection.AddSingleton(leafToken, LeafDependency);
+    collection.AddTransient(
+      middleToken,
+      annotateConstructorDependencies(MiddleDependency, [leafToken]),
+    );
+    collection.AddTransient(
+      consumerToken,
+      annotateConstructorDependencies(MultiDependencyConsumer, [leafToken, middleToken]),
+    );
+
+    const provider = new ServiceProvider(collection);
+    const consumer = provider.Resolve(consumerToken);
+
+    expect(consumer.first).toBeInstanceOf(LeafDependency);
+    expect(consumer.second).toBeInstanceOf(MiddleDependency);
+    expect(consumer.second.leaf).toBeInstanceOf(LeafDependency);
+  });
+
+  it('throws when constructor dependencies are missing', () => {
+    const consumerToken = createInjectionToken<ConstructorConsumer>('missing-constructor-consumer');
+    const collection = new ServiceCollection();
+
+    collection.AddTransient(
+      consumerToken,
+      annotateConstructorDependencies(ConstructorConsumer, [
+        createInjectionToken<RootDependency>('missing-root'),
+      ]),
+    );
+
+    const provider = new ServiceProvider(collection);
+
+    expect(() => provider.Resolve(consumerToken)).toThrow(ResolutionException);
+  });
+
+  it('validates constructor dependency metadata', () => {
+    const consumerToken = createInjectionToken<InvalidConstructorConsumer>('invalid-constructor');
+    const collection = new ServiceCollection();
+
+    collection.AddTransient(
+      consumerToken,
+      annotateConstructorDependencies(InvalidConstructorConsumer, [
+        createInjectionToken<LeafDependency>('token-1'),
+      ]),
+    );
+
+    const provider = new ServiceProvider(collection);
+
+    expect(() => provider.Resolve(consumerToken)).toThrow(ResolutionException);
+  });
+
+  it('supports factory integrations with constructor-resolved services', () => {
+    const leafToken = createInjectionToken<LeafDependency>('factory-leaf');
+    const middleToken = createInjectionToken<MiddleDependency>('factory-middle');
+    const rootToken = createInjectionToken<RootDependency>('factory-root');
+    const consumerToken = createInjectionToken<ConstructorConsumer>('factory-consumer');
+    const collection = new ServiceCollection();
+
+    collection.AddSingleton(leafToken, LeafDependency);
+    collection.AddTransient(
+      middleToken,
+      annotateConstructorDependencies(MiddleDependency, [leafToken]),
+    );
+    collection.AddSingleton(
+      rootToken,
+      annotateConstructorDependencies(RootDependency, [middleToken, leafToken]),
+    );
+    collection.AddSingleton(
+      consumerToken,
+      annotateConstructorDependencies(ConstructorConsumer, [rootToken]),
+    );
+
+    const provider = new ServiceProvider(collection);
+    const consumer = provider.Resolve(consumerToken);
+
+    expect(consumer.dependency).toBeInstanceOf(RootDependency);
   });
 });
