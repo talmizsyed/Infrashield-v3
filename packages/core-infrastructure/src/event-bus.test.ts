@@ -10,9 +10,13 @@ import {
   EventPriority,
   type IEvent,
   type IEventHandler,
+  EventDelegate,
   EventDispatcher,
+  EventMiddlewareContext,
+  EventPipelineBuilder,
   HandlerResolver,
   EventPublisher,
+  IEventMiddleware,
   SubscriptionBuilder,
   SubscriptionRegistry,
 } from './event-bus';
@@ -70,6 +74,52 @@ class ThrowingHandler implements IEventHandler<UserCreatedEvent> {
   public async handle(event: UserCreatedEvent): Promise<void> {
     this.counter.calls.push(`throw:${event.payload.userId}`);
     throw new Error(`boom:${event.payload.userId}`);
+  }
+}
+
+class TrackingMiddleware implements IEventMiddleware<UserCreatedEvent> {
+  public constructor(
+    public readonly name: string,
+    private readonly entries: string[],
+  ) {}
+
+  public async execute(
+    context: EventMiddlewareContext<UserCreatedEvent>,
+    next: EventDelegate<UserCreatedEvent>,
+  ): Promise<void> {
+    this.entries.push(`${this.name}:before`);
+    context.properties[`${this.name}:visited`] = true;
+    await next(context);
+    this.entries.push(`${this.name}:after`);
+  }
+}
+
+class ShortCircuitMiddleware implements IEventMiddleware<UserCreatedEvent> {
+  public constructor(private readonly entries: string[]) {}
+
+  public async execute(
+    context: EventMiddlewareContext<UserCreatedEvent>,
+    _next: EventDelegate<UserCreatedEvent>,
+  ): Promise<void> {
+    this.entries.push('short-circuit');
+    context.properties.shortCircuit = true;
+  }
+}
+
+class ThrowingMiddleware implements IEventMiddleware<UserCreatedEvent> {
+  public constructor(private readonly entries: string[]) {}
+
+  public async execute(
+    context: EventMiddlewareContext<UserCreatedEvent>,
+    next: EventDelegate<UserCreatedEvent>,
+  ): Promise<void> {
+    this.entries.push('throwing:before');
+    try {
+      await next(context);
+    } catch (error) {
+      this.entries.push('throwing:after');
+      throw error;
+    }
   }
 }
 
@@ -212,6 +262,139 @@ describe('event bus', () => {
 
     expect(registry.getSubscriptions(UserCreatedEvent.name)).toHaveLength(5);
     expect(publisher.preparedEvents).toHaveLength(3);
+  });
+
+  it('supports a single middleware around dispatch', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('middleware-single');
+    const entries: string[] = [];
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const builder = new EventPipelineBuilder<UserCreatedEvent>();
+    builder.use(new TrackingMiddleware('alpha', entries));
+    const pipeline = builder.build();
+
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      pipeline,
+    );
+
+    await dispatcher.dispatch(new UserCreatedEvent({ userId: '42' }));
+
+    expect(entries).toEqual(['alpha:before', 'alpha:after']);
+    expect(provider.Resolve(counterToken).calls).toEqual(['42']);
+  });
+
+  it('executes multiple middleware in registration order', async () => {
+    const entries: string[] = [];
+    const builder = new EventPipelineBuilder<UserCreatedEvent>();
+    builder.use(new TrackingMiddleware('first', entries));
+    builder.use(new TrackingMiddleware('second', entries));
+    const pipeline = builder.build();
+
+    const delegate: EventDelegate<UserCreatedEvent> = async (context) => {
+      entries.push(`core:${context.event.payload.userId}`);
+    };
+
+    await pipeline.execute(
+      new EventMiddlewareContext(new UserCreatedEvent({ userId: '42' }), undefined),
+      delegate,
+    );
+
+    expect(entries).toEqual([
+      'first:before',
+      'second:before',
+      'core:42',
+      'second:after',
+      'first:after',
+    ]);
+  });
+
+  it('supports short-circuiting and context propagation', async () => {
+    const entries: string[] = [];
+    const builder = new EventPipelineBuilder<UserCreatedEvent>();
+    builder.use(new ShortCircuitMiddleware(entries));
+    builder.use(new TrackingMiddleware('tail', entries));
+    const pipeline = builder.build();
+    const context = new EventMiddlewareContext(new UserCreatedEvent({ userId: '42' }), undefined);
+
+    await pipeline.execute(context, async () => {
+      entries.push('core');
+    });
+
+    expect(entries).toEqual(['short-circuit']);
+    expect(context.properties.shortCircuit).toBe(true);
+  });
+
+  it('intercepts middleware exceptions and preserves propagation', async () => {
+    const entries: string[] = [];
+    const builder = new EventPipelineBuilder<UserCreatedEvent>();
+    builder.use(new ThrowingMiddleware(entries));
+    const pipeline = builder.build();
+
+    await expect(
+      pipeline.execute(
+        new EventMiddlewareContext(new UserCreatedEvent({ userId: '42' }), undefined),
+        async () => {
+          entries.push('core');
+          throw new Error('boom');
+        },
+      ),
+    ).rejects.toThrow('boom');
+
+    expect(entries).toEqual(['throwing:before', 'core', 'throwing:after']);
+  });
+
+  it('composes pipelines immutably', async () => {
+    const firstEntries: string[] = [];
+    const secondEntries: string[] = [];
+    const first = new EventPipelineBuilder<UserCreatedEvent>()
+      .use(new TrackingMiddleware('first', firstEntries))
+      .build();
+    const second = new EventPipelineBuilder<UserCreatedEvent>()
+      .use(new TrackingMiddleware('second', secondEntries))
+      .build();
+
+    const composed = first.compose(second);
+    await composed.execute(
+      new EventMiddlewareContext(new UserCreatedEvent({ userId: '42' }), undefined),
+      async () => {
+        firstEntries.push('core');
+        secondEntries.push('core');
+      },
+    );
+
+    expect(firstEntries).toEqual(['first:before', 'core', 'first:after']);
+    expect(secondEntries).toEqual(['second:before', 'core', 'second:after']);
+  });
+
+  it('supports concurrent execution with isolated contexts', async () => {
+    const entries: string[] = [];
+    const pipeline = new EventPipelineBuilder<UserCreatedEvent>()
+      .use(new TrackingMiddleware('shared', entries))
+      .build();
+
+    await Promise.all(
+      Array.from({ length: 3 }, (_, index) =>
+        pipeline.execute(
+          new EventMiddlewareContext(new UserCreatedEvent({ userId: String(index) }), undefined),
+          async (context) => {
+            entries.push(`core:${context.event.payload.userId}`);
+          },
+        ),
+      ),
+    );
+
+    expect(entries.filter((value) => value.startsWith('shared:before'))).toHaveLength(3);
+    expect(entries.filter((value) => value.startsWith('core:'))).toHaveLength(3);
   });
 
   it('dispatches a single handler through the dependency injection container', async () => {
