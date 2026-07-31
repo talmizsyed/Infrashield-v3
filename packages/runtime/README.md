@@ -37,6 +37,57 @@ await execution.complete({ output: { ok: true } });
 
 A runtime pipeline composes middleware in order and propagates the execution context to each step.
 
+The package also exposes a generic execution-pipeline module for reusable middleware orchestration with explicit context, cancellation, short-circuit behavior, and metrics. It is designed for composition by higher-level runtimes without coupling to AI or workflow concerns.
+
+```ts
+import {
+  ExecutionPipelineBuilder,
+  ExecutionPipelineContext,
+  ExecutionBehavior,
+} from '@infrashield/runtime';
+
+const pipeline = new ExecutionPipelineBuilder<string, string>()
+  .use({
+    id: 'auth',
+    async execute(context, next) {
+      context.setData('userId', 'u-1');
+      return next(context);
+    },
+  })
+  .use({
+    id: 'short-circuit',
+    behavior: ExecutionBehavior.ShortCircuit,
+    async execute() {
+      return {
+        status: 'short-circuited',
+        value: 'done',
+        metadata: {},
+        durationMs: 0,
+        middlewareCount: 1,
+      };
+    },
+  })
+  .build();
+
+const result = await pipeline.execute(
+  new ExecutionPipelineContext({ correlationId: 'corr-1' }),
+  async () => ({
+    status: 'completed',
+    value: 'ok',
+    metadata: {},
+    durationMs: 0,
+    middlewareCount: 0,
+  }),
+);
+```
+
+### Middleware lifecycle
+
+- middleware receives a pipeline context and a delegate to continue execution
+- middleware can enrich context data, validate state, short-circuit, or throw
+- cancellation is surfaced as a deterministic pipeline result and stops the remaining chain
+- metrics record completed, failed, cancelled, and short-circuited executions
+
 ```ts
 import { PipelineBuilder, RuntimeContext } from '@infrashield/runtime';
 
