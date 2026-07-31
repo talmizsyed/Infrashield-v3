@@ -23,6 +23,7 @@ It intentionally does not include:
 - `clock`: system/fixed/offset clock contracts and implementations
 - `serializer`: serializer contracts and JSON implementation with safe wrappers
 - `di`: dependency injection contracts and service collection metadata implementation
+- `event-bus`: in-process event domain model, metadata, envelopes, and contracts
 - `options`: options pattern contracts and generic options builder
 
 ## Architecture Overview
@@ -216,6 +217,45 @@ const provider = new ServiceProvider(services);
 const logger = provider.Resolve(LOGGER_TOKEN);
 const maybeLogger = provider.TryResolve(createInjectionToken<ILogger>('missing'));
 const allLoggers = provider.ResolveAll(LOGGER_TOKEN);
+```
+
+## Event Bus Foundation
+
+Story 6.1 introduces the in-process event bus domain model and public contracts without implementing publishing, subscriptions, or dispatching.
+
+### Core Concepts
+
+- `IEvent` defines the immutable event contract shared by all domain events.
+- `EventBase` provides a reusable base class for strongly typed event payloads.
+- `EventMetadata` carries identity, correlation, timestamp, source, category, priority, version, and tags.
+- `EventEnvelope` wraps an event with metadata for transport-safe handling.
+- `EventContext` carries contextual metadata for future middleware and dispatch flows.
+
+### Usage Example
+
+```ts
+import {
+  EventBase,
+  type EventCategory,
+  type EventPriority,
+} from '@infrashield/core-infrastructure';
+
+class UserCreatedEvent extends EventBase<{ userId: string }> {
+  public constructor(userId: string) {
+    super(
+      { userId },
+      {
+        source: 'users',
+        category: 'domain' as EventCategory,
+        priority: 'normal' as EventPriority,
+        version: 1,
+      },
+    );
+  }
+}
+
+const event = new UserCreatedEvent('42');
+const envelope = event.toEnvelope();
 ```
 
 ## Best Practices

@@ -28,6 +28,7 @@ export {
   ValidationException,
 } from './di';
 export * from './errors';
+export * from './event-bus';
 export * from './logger';
 export * from './options';
 export * from './primitives';
