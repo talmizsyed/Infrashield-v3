@@ -62,7 +62,13 @@ export interface IAIModel {
   readonly providerId: string;
   readonly name: string;
   readonly version: string;
-  readonly capabilities: readonly AIModelCapabilities[];
+  readonly capabilities: readonly AIModelCapability[];
+  readonly family?: string;
+  readonly status?: string;
+  readonly deprecated?: boolean;
+  readonly constraints?: AIModelConstraints;
+  readonly requirements?: AIModelRequirements;
+  readonly aliases?: readonly string[];
   readonly metadata?: SerializableValueObject;
 }
 
@@ -96,9 +102,21 @@ export interface IAIExecutionContext {
 
 export interface IAIModelRegistry {
   register(model: IAIModel): void;
+  update(model: IAIModel): void;
   unregister(modelId: string): void;
   get(modelId: string): IAIModel | undefined;
   list(): readonly IAIModel[];
+  lookup(providerId: string, modelId: string): IAIModel | undefined;
+  latestVersion(family: string): IAIModel | undefined;
+  lookupFamily(family: string): readonly IAIModel[];
+  query(query: AIModelQuery): readonly IAIModel[];
+  snapshot(): AIModelSnapshot;
+  lookupByAlias(alias: string): IAIModel | undefined;
+  lookupVersion(
+    providerId: string,
+    modelIdOrAlias: string,
+    version: AIModelVersion,
+  ): IAIModel | undefined;
 }
 
 export class AIGatewayException extends Error {
@@ -201,6 +219,47 @@ export class AIProviderCapabilities {
   }
 }
 
+export class AIModelCapability {
+  public readonly kind: string;
+  public readonly supported: boolean;
+  public readonly maxContextLength?: number;
+  public readonly supportsStreaming?: boolean;
+  public readonly supportsVision?: boolean;
+  public readonly supportsFunctionCalling?: boolean;
+  public readonly supportsStructuredOutput?: boolean;
+  public readonly supportsReasoning?: boolean;
+  public readonly supportsEmbeddings?: boolean;
+  public readonly supportsImageGeneration?: boolean;
+  public readonly supportsAudio?: boolean;
+
+  public constructor(options: {
+    readonly kind: string;
+    readonly supported: boolean;
+    readonly maxContextLength?: number;
+    readonly supportsStreaming?: boolean;
+    readonly supportsVision?: boolean;
+    readonly supportsFunctionCalling?: boolean;
+    readonly supportsStructuredOutput?: boolean;
+    readonly supportsReasoning?: boolean;
+    readonly supportsEmbeddings?: boolean;
+    readonly supportsImageGeneration?: boolean;
+    readonly supportsAudio?: boolean;
+  }) {
+    this.kind = options.kind;
+    this.supported = options.supported;
+    this.maxContextLength = options.maxContextLength;
+    this.supportsStreaming = options.supportsStreaming;
+    this.supportsVision = options.supportsVision;
+    this.supportsFunctionCalling = options.supportsFunctionCalling;
+    this.supportsStructuredOutput = options.supportsStructuredOutput;
+    this.supportsReasoning = options.supportsReasoning;
+    this.supportsEmbeddings = options.supportsEmbeddings;
+    this.supportsImageGeneration = options.supportsImageGeneration;
+    this.supportsAudio = options.supportsAudio;
+    Object.freeze(this);
+  }
+}
+
 export class AIModelCapabilities {
   public readonly contextLength?: number;
   public readonly supportsStreaming?: boolean;
@@ -235,12 +294,206 @@ export class AIModelCapabilities {
   }
 }
 
+export class AIModelConstraints {
+  public readonly maxContextTokens?: number;
+  public readonly maxOutputTokens?: number;
+  public readonly maxInputTokens?: number;
+
+  public constructor(options: {
+    readonly maxContextTokens?: number;
+    readonly maxOutputTokens?: number;
+    readonly maxInputTokens?: number;
+  }) {
+    this.maxContextTokens = options.maxContextTokens;
+    this.maxOutputTokens = options.maxOutputTokens;
+    this.maxInputTokens = options.maxInputTokens;
+    Object.freeze(this);
+  }
+}
+
+export class AIModelRequirements {
+  public readonly supportsStreaming?: boolean;
+  public readonly supportsVision?: boolean;
+  public readonly supportsFunctionCalling?: boolean;
+  public readonly supportsStructuredOutput?: boolean;
+  public readonly supportsReasoning?: boolean;
+  public readonly supportsEmbeddings?: boolean;
+  public readonly supportsImageGeneration?: boolean;
+  public readonly supportsAudio?: boolean;
+
+  public constructor(options: {
+    readonly supportsStreaming?: boolean;
+    readonly supportsVision?: boolean;
+    readonly supportsFunctionCalling?: boolean;
+    readonly supportsStructuredOutput?: boolean;
+    readonly supportsReasoning?: boolean;
+    readonly supportsEmbeddings?: boolean;
+    readonly supportsImageGeneration?: boolean;
+    readonly supportsAudio?: boolean;
+  }) {
+    this.supportsStreaming = options.supportsStreaming;
+    this.supportsVision = options.supportsVision;
+    this.supportsFunctionCalling = options.supportsFunctionCalling;
+    this.supportsStructuredOutput = options.supportsStructuredOutput;
+    this.supportsReasoning = options.supportsReasoning;
+    this.supportsEmbeddings = options.supportsEmbeddings;
+    this.supportsImageGeneration = options.supportsImageGeneration;
+    this.supportsAudio = options.supportsAudio;
+    Object.freeze(this);
+  }
+}
+
+export class AIModelVersion {
+  public readonly value: string;
+
+  public constructor(value: string) {
+    this.value = value.trim();
+    Object.freeze(this);
+  }
+
+  public toString(): string {
+    return this.value;
+  }
+}
+
+export class AIModelFilter {
+  public readonly capability?: string;
+  public readonly status?: string;
+  public readonly providerId?: string;
+  public readonly contextTokens?: number;
+  public readonly includeDeprecated?: boolean;
+
+  public constructor(
+    options: {
+      readonly capability?: string;
+      readonly status?: string;
+      readonly providerId?: string;
+      readonly contextTokens?: number;
+      readonly includeDeprecated?: boolean;
+    } = {},
+  ) {
+    this.capability = options.capability?.trim();
+    this.status = options.status?.trim();
+    this.providerId = options.providerId?.trim();
+    this.contextTokens = options.contextTokens;
+    this.includeDeprecated = options.includeDeprecated;
+    Object.freeze(this);
+  }
+}
+
+export class AIModelQuery {
+  public readonly filter?: AIModelFilter;
+  public readonly limit?: number;
+
+  public constructor(
+    options: {
+      readonly filter?: AIModelFilter;
+      readonly limit?: number;
+    } = {},
+  ) {
+    this.filter = options.filter;
+    this.limit = options.limit;
+    Object.freeze(this);
+  }
+}
+
+export class AIModelDescriptor implements IAIModel {
+  public readonly id: string;
+  public readonly providerId: string;
+  public readonly family: string;
+  public readonly name: string;
+  public readonly version: string;
+  public readonly status: string;
+  public readonly deprecated: boolean;
+  public readonly capabilities: readonly AIModelCapability[];
+  public readonly constraints?: AIModelConstraints;
+  public readonly requirements?: AIModelRequirements;
+  public readonly aliases: readonly string[];
+  public readonly metadata?: SerializableValueObject;
+
+  public constructor(options: {
+    readonly id: string;
+    readonly providerId: string;
+    readonly family: string;
+    readonly name: string;
+    readonly version: string;
+    readonly status?: string;
+    readonly deprecated?: boolean;
+    readonly capabilities: readonly (AIModelCapability | AIModelCapabilities)[];
+    readonly constraints?: AIModelConstraints;
+    readonly requirements?: AIModelRequirements;
+    readonly aliases?: readonly string[];
+    readonly metadata?: SerializableValueObject;
+  }) {
+    if (!options.id.trim()) {
+      throw new AIModelException('Model identifier is required');
+    }
+    this.id = options.id.trim();
+    this.providerId = options.providerId.trim();
+    this.family = options.family.trim();
+    this.name = options.name.trim();
+    this.version = options.version.trim();
+    this.status = options.status?.trim() ?? 'stable';
+    this.deprecated = options.deprecated ?? false;
+    this.capabilities = Object.freeze(this.normalizeCapabilities(options.capabilities));
+    this.constraints = options.constraints ? Object.freeze({ ...options.constraints }) : undefined;
+    this.requirements = options.requirements
+      ? Object.freeze({ ...options.requirements })
+      : undefined;
+    this.aliases = Object.freeze(
+      [...(options.aliases ?? [])].map((alias) => alias.trim()).filter(Boolean),
+    );
+    this.metadata = options.metadata ? Object.freeze({ ...options.metadata }) : undefined;
+    Object.freeze(this);
+  }
+
+  private normalizeCapabilities(
+    capabilities: readonly (AIModelCapability | AIModelCapabilities)[],
+  ): readonly AIModelCapability[] {
+    return capabilities.map((capability) => {
+      if (capability instanceof AIModelCapability) {
+        return capability;
+      }
+      return new AIModelCapability({
+        kind: 'capability-profile',
+        supported: true,
+        maxContextLength: capability.contextLength,
+        supportsStreaming: capability.supportsStreaming,
+        supportsVision: capability.supportsVision,
+        supportsFunctionCalling: capability.supportsFunctionCalling,
+        supportsStructuredOutput: capability.supportsStructuredOutput,
+        supportsReasoning: capability.supportsReasoning,
+        supportsEmbeddings: capability.supportsEmbeddings,
+        supportsImageGeneration: capability.supportsImageGeneration,
+        supportsAudio: capability.supportsAudio,
+      });
+    });
+  }
+}
+
+export class AIModelSnapshot {
+  public readonly generatedAt: string;
+  public readonly models: readonly AIModelDescriptor[];
+
+  public constructor(models: readonly IAIModel[]) {
+    this.generatedAt = new Date().toISOString();
+    this.models = Object.freeze(models.map((model) => model as AIModelDescriptor));
+    Object.freeze(this);
+  }
+}
+
 export class AIModel implements IAIModel {
   public readonly id: string;
   public readonly providerId: string;
   public readonly name: string;
   public readonly version: string;
-  public readonly capabilities: readonly AIModelCapabilities[];
+  public readonly capabilities: readonly AIModelCapability[];
+  public readonly family?: string;
+  public readonly status?: string;
+  public readonly deprecated?: boolean;
+  public readonly constraints?: AIModelConstraints;
+  public readonly requirements?: AIModelRequirements;
+  public readonly aliases?: readonly string[];
   public readonly metadata?: SerializableValueObject;
 
   public constructor(options: {
@@ -248,7 +501,13 @@ export class AIModel implements IAIModel {
     readonly providerId: string;
     readonly name: string;
     readonly version: string;
-    readonly capabilities: readonly AIModelCapabilities[];
+    readonly capabilities: readonly (AIModelCapability | AIModelCapabilities)[];
+    readonly family?: string;
+    readonly status?: string;
+    readonly deprecated?: boolean;
+    readonly constraints?: AIModelConstraints;
+    readonly requirements?: AIModelRequirements;
+    readonly aliases?: readonly string[];
     readonly metadata?: SerializableValueObject;
   }) {
     if (!options.id.trim()) {
@@ -258,8 +517,39 @@ export class AIModel implements IAIModel {
     this.providerId = options.providerId.trim();
     this.name = options.name.trim();
     this.version = options.version.trim();
-    this.capabilities = Object.freeze([...options.capabilities]);
+    this.capabilities = Object.freeze(this.normalizeCapabilities(options.capabilities));
+    this.family = options.family?.trim();
+    this.status = options.status?.trim();
+    this.deprecated = options.deprecated ?? false;
+    this.constraints = options.constraints ? Object.freeze({ ...options.constraints }) : undefined;
+    this.requirements = options.requirements
+      ? Object.freeze({ ...options.requirements })
+      : undefined;
+    this.aliases = options.aliases ? Object.freeze([...options.aliases]) : undefined;
     this.metadata = options.metadata ? Object.freeze({ ...options.metadata }) : undefined;
+  }
+
+  private normalizeCapabilities(
+    capabilities: readonly (AIModelCapability | AIModelCapabilities)[],
+  ): readonly AIModelCapability[] {
+    return capabilities.map((capability) => {
+      if (capability instanceof AIModelCapability) {
+        return capability;
+      }
+      return new AIModelCapability({
+        kind: 'capability-profile',
+        supported: true,
+        maxContextLength: capability.contextLength,
+        supportsStreaming: capability.supportsStreaming,
+        supportsVision: capability.supportsVision,
+        supportsFunctionCalling: capability.supportsFunctionCalling,
+        supportsStructuredOutput: capability.supportsStructuredOutput,
+        supportsReasoning: capability.supportsReasoning,
+        supportsEmbeddings: capability.supportsEmbeddings,
+        supportsImageGeneration: capability.supportsImageGeneration,
+        supportsAudio: capability.supportsAudio,
+      });
+    });
   }
 }
 
@@ -469,15 +759,34 @@ export class AIProviderRegistry implements IAIProviderRegistry {
 
 export class AIModelRegistry implements IAIModelRegistry {
   private readonly models = new Map<string, IAIModel>();
+  private readonly aliases = new Map<string, string>();
 
   public register(model: IAIModel): void {
-    if (this.models.has(model.id)) {
-      throw new AIRegistryException(`Model '${model.id}' is already registered`);
+    const normalized = this.normalizeModel(model);
+    if (this.models.has(normalized.id)) {
+      throw new AIRegistryException(`Model '${normalized.id}' is already registered`);
     }
-    this.models.set(model.id, model);
+    this.models.set(normalized.id, normalized);
+    this.indexAliases(normalized);
+  }
+
+  public update(model: IAIModel): void {
+    const normalized = this.normalizeModel(model);
+    if (!this.models.has(normalized.id)) {
+      this.register(normalized);
+      return;
+    }
+    this.models.set(normalized.id, normalized);
+    this.indexAliases(normalized);
   }
 
   public unregister(modelId: string): void {
+    const model = this.models.get(modelId);
+    if (model) {
+      for (const alias of model.aliases ?? []) {
+        this.aliases.delete(alias);
+      }
+    }
     this.models.delete(modelId);
   }
 
@@ -487,6 +796,170 @@ export class AIModelRegistry implements IAIModelRegistry {
 
   public list(): readonly IAIModel[] {
     return Object.freeze([...this.models.values()]);
+  }
+
+  public lookup(providerId: string, modelId: string): IAIModel | undefined {
+    const candidates = [...this.models.values()].filter((model) => model.providerId === providerId);
+    return candidates.find(
+      (model) => model.id === modelId || (model.aliases ?? []).includes(modelId),
+    );
+  }
+
+  public latestVersion(family: string): IAIModel | undefined {
+    const candidates = [...this.models.values()].filter((model) => model.family === family);
+    return candidates.sort((left, right) => this.compareVersions(left.version, right.version))[
+      candidates.length - 1
+    ];
+  }
+
+  public lookupFamily(family: string): readonly IAIModel[] {
+    return Object.freeze([...this.models.values()].filter((model) => model.family === family));
+  }
+
+  public query(query: AIModelQuery): readonly IAIModel[] {
+    const results = [...this.models.values()].filter((model) => {
+      const filter = query.filter;
+      if (!filter) {
+        return true;
+      }
+      if (filter.providerId && model.providerId !== filter.providerId) {
+        return false;
+      }
+      if (filter.status && model.status !== filter.status) {
+        return false;
+      }
+      if (filter.capability) {
+        const matchesCapability = (model.capabilities ?? []).some(
+          (capability) => capability.kind === filter.capability,
+        );
+        if (!matchesCapability) {
+          return false;
+        }
+      }
+      if (
+        filter.contextTokens &&
+        model.constraints?.maxContextTokens &&
+        model.constraints.maxContextTokens < filter.contextTokens
+      ) {
+        return false;
+      }
+      if (!filter.includeDeprecated && model.deprecated) {
+        return false;
+      }
+      return true;
+    });
+
+    if (query.limit && query.limit > 0) {
+      return Object.freeze(results.slice(0, query.limit));
+    }
+    return Object.freeze(results);
+  }
+
+  public snapshot(): AIModelSnapshot {
+    return new AIModelSnapshot(this.list());
+  }
+
+  public lookupByAlias(alias: string): IAIModel | undefined {
+    const normalizedAlias = alias.trim();
+    const modelId = this.aliases.get(normalizedAlias);
+    return modelId ? this.models.get(modelId) : undefined;
+  }
+
+  public lookupVersion(
+    providerId: string,
+    modelIdOrAlias: string,
+    version: AIModelVersion,
+  ): IAIModel | undefined {
+    const model = this.lookup(providerId, modelIdOrAlias) ?? this.lookupByAlias(modelIdOrAlias);
+    if (!model || model.providerId !== providerId) {
+      return undefined;
+    }
+    return model.version === version.value ? model : undefined;
+  }
+
+  private normalizeModel(model: IAIModel): IAIModel {
+    if (!model.id?.trim()) {
+      throw new AIModelException('Model identifier is required');
+    }
+    if (!model.providerId?.trim()) {
+      throw new AIModelException('Model provider identifier is required');
+    }
+    if (!model.name?.trim()) {
+      throw new AIModelException('Model name is required');
+    }
+    if (!model.version?.trim()) {
+      throw new AIModelException('Model version is required');
+    }
+
+    if (model instanceof AIModelDescriptor) {
+      return model;
+    }
+
+    if (model instanceof AIModel) {
+      return new AIModel({
+        id: model.id,
+        providerId: model.providerId,
+        name: model.name,
+        version: model.version,
+        capabilities: model.capabilities as readonly AIModelCapability[],
+        family: model.family,
+        status: model.status,
+        deprecated: model.deprecated,
+        constraints: model.constraints,
+        requirements: model.requirements,
+        aliases: model.aliases,
+        metadata: model.metadata,
+      });
+    }
+
+    return {
+      ...model,
+      id: model.id.trim(),
+      providerId: model.providerId.trim(),
+      name: model.name.trim(),
+      version: model.version.trim(),
+      family: model.family?.trim(),
+      status: model.status?.trim(),
+      deprecated: model.deprecated ?? false,
+      capabilities: Object.freeze(this.normalizeCapabilities(model.capabilities)),
+      constraints: model.constraints ? Object.freeze({ ...model.constraints }) : undefined,
+      requirements: model.requirements ? Object.freeze({ ...model.requirements }) : undefined,
+      aliases: model.aliases ? Object.freeze([...model.aliases]) : undefined,
+      metadata: model.metadata ? Object.freeze({ ...model.metadata }) : undefined,
+    };
+  }
+
+  private normalizeCapabilities(
+    capabilities: readonly AIModelCapability[],
+  ): readonly AIModelCapability[] {
+    return capabilities.map((capability) => capability);
+  }
+
+  private indexAliases(model: IAIModel): void {
+    for (const alias of model.aliases ?? []) {
+      const normalizedAlias = alias.trim();
+      if (!normalizedAlias) {
+        continue;
+      }
+      this.aliases.set(normalizedAlias, model.id);
+    }
+  }
+
+  private compareVersions(left: string, right: string): number {
+    const leftParts = left.split('.').map((part) => Number.parseInt(part, 10) || 0);
+    const rightParts = right.split('.').map((part) => Number.parseInt(part, 10) || 0);
+    const length = Math.max(leftParts.length, rightParts.length);
+    for (let index = 0; index < length; index += 1) {
+      const leftValue = leftParts[index] ?? 0;
+      const rightValue = rightParts[index] ?? 0;
+      if (leftValue > rightValue) {
+        return 1;
+      }
+      if (leftValue < rightValue) {
+        return -1;
+      }
+    }
+    return 0;
   }
 }
 
