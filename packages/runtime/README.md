@@ -82,6 +82,60 @@ metrics.recordCancelled(2);
 console.log(metrics.snapshot());
 ```
 
+## Runtime Host Architecture
+
+The runtime host is the bootstrapper for the execution engine. It owns the runtime lifecycle, validates immutable configuration, manages a service scope, publishes lifecycle events through the public event bus contract, and notifies observers about state transitions.
+
+### RuntimeHostBuilder
+
+Use the builder for fluent setup:
+
+```ts
+import { RuntimeHostBuilder } from '@infrashield/runtime';
+
+const host = new RuntimeHostBuilder()
+  .withConfiguration({
+    id: 'host-1',
+    name: 'demo-host',
+    execution: { timeoutMs: 5000, concurrency: 4 },
+    pipeline: { middleware: [] },
+    requiredServices: ['logger'],
+  })
+  .withService('logger', { info: () => undefined })
+  .build();
+```
+
+### Lifecycle
+
+The host supports the lifecycle:
+
+- Created
+- Configuring
+- Configured
+- Starting
+- Running
+- Stopping
+- Stopped
+- Failed
+
+Transitions are validated and throw strongly typed exceptions for invalid state changes.
+
+### Configuration
+
+Runtime host configuration is immutable and validated. It covers execution options, timeout defaults, concurrency defaults, observer settings, metrics settings, and required services.
+
+### Dependency Injection Integration
+
+The host creates a root service scope and supports execution scopes for child dependencies. Services are registered by key and resolved through the scoped container.
+
+### Event Integration
+
+Events are published through the public event bus contract only. The host does not depend on event-bus internals.
+
+### Diagnostics
+
+The host tracks startup and shutdown durations, the current state, initialization failures, configuration validation errors, and service resolution issues.
+
 ## Public API
 
-The package exports the core foundation types and implementations through the package entrypoint, including Runtime, RuntimeHost, RuntimeExecution, RuntimeContext, RuntimePipeline, RuntimeCancellation, RuntimeMetrics, and the lifecycle and exception types.
+The package exports the core foundation types and implementations through the package entrypoint, including Runtime, RuntimeHost, RuntimeHostBuilder, RuntimeHostConfiguration, RuntimeHostContext, RuntimeHostDiagnostics, RuntimeHostServiceScope, RuntimeExecution, RuntimeContext, RuntimePipeline, RuntimeCancellation, RuntimeMetrics, and the lifecycle and exception types.
