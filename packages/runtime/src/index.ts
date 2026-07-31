@@ -12,6 +12,7 @@ export * from './pipeline.js';
 export * from './registry.js';
 export * from './retry.js';
 export * from './runtime-engine.js';
+export * from './runtime-foundation.js';
 
 import type { Context } from '@infrashield/context';
 import type { Agent } from '@infrashield/agent-core';
