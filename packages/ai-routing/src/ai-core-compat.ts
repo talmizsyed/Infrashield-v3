@@ -1,0 +1,16 @@
+export {
+  AIModelCapability,
+  AIModelConstraints,
+  AIModelDescriptor,
+  AIModelRegistry,
+  AIProvider,
+  AIProviderCapabilities,
+  AIProviderDescriptor,
+  AIProviderHealth,
+  AIProviderRegistry,
+  type AICapabilityKind,
+  type IAIModel,
+  type IAIModelRegistry,
+  type IAIProvider,
+  type IAIProviderRegistry,
+} from '@infrashield/ai-core';

@@ -77,7 +77,14 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
-  packages/ai-core: {}
+  packages/ai-core:
+    dependencies:
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@infrashield/core-infrastructure':
+        specifier: workspace:*
+        version: link:../core-infrastructure
 
   packages/ai-memory: {}
 
@@ -85,7 +92,17 @@ importers:
 
   packages/ai-prompts: {}
 
-  packages/ai-routing: {}
+  packages/ai-routing:
+    dependencies:
+      '@infrashield/ai-core':
+        specifier: workspace:*
+        version: link:../ai-core
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@infrashield/core-infrastructure':
+        specifier: workspace:*
+        version: link:../core-infrastructure
 
   packages/ai-security: {}
 
@@ -133,6 +150,15 @@ importers:
       '@agentic/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@infrashield/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@infrashield/context':
+        specifier: workspace:*
+        version: link:../context
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/sdk:
     dependencies:
@@ -157,6 +183,9 @@ importers:
       '@infrashield/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@infrashield/core-infrastructure':
+        specifier: workspace:*
+        version: link:../core-infrastructure
       '@infrashield/runtime':
         specifier: workspace:*
         version: link:../runtime

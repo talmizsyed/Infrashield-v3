@@ -2,32 +2,83 @@
   "extends": "./tsconfig.base.json",
   "files": [],
   "references": [
-    { "path": "packages/shared" },
-    { "path": "packages/core-infrastructure" },
-    { "path": "packages/config" },
-    { "path": "packages/logger" },
-    { "path": "packages/types" },
-    { "path": "packages/utils" },
-    { "path": "packages/ai-core" },
-    { "path": "packages/ai-routing" },
-    { "path": "packages/ai-memory" },
-    { "path": "packages/ai-security" },
-    { "path": "packages/ai-observability" },
-    { "path": "packages/ai-prompts" },
-    { "path": "packages/ai-tools" },
-    { "path": "packages/sdk" },
-    { "path": "packages/workflow-engine" },
-    { "path": "providers/provider-anthropic" },
-    { "path": "providers/provider-openai" },
-    { "path": "providers/provider-gemini" },
-    { "path": "providers/provider-kimi" },
-    { "path": "providers/provider-deepseek" },
-    { "path": "providers/provider-groq" },
-    { "path": "providers/provider-ollama" },
-    { "path": "apps/backend" },
-    { "path": "apps/dashboard" },
-    { "path": "apps/ai-gateway" },
-    { "path": "apps/workflow-engine" },
-    { "path": "apps/api-gateway" }
+    {
+      "path": "packages/shared"
+    },
+    {
+      "path": "packages/core-infrastructure"
+    },
+    {
+      "path": "packages/config"
+    },
+    {
+      "path": "packages/logger"
+    },
+    {
+      "path": "packages/types"
+    },
+    {
+      "path": "packages/utils"
+    },
+    {
+      "path": "packages/ai-core"
+    },
+    {
+      "path": "packages/ai-routing"
+    },
+    {
+      "path": "packages/ai-memory"
+    },
+    {
+      "path": "packages/ai-security"
+    },
+    {
+      "path": "packages/ai-observability"
+    },
+    {
+      "path": "packages/ai-prompts"
+    },
+    {
+      "path": "packages/ai-tools"
+    },
+    {
+      "path": "packages/sdk"
+    },
+    {
+      "path": "packages/workflow-engine"
+    },
+    {
+      "path": "providers/provider-anthropic"
+    },
+    {
+      "path": "providers/provider-openai"
+    },
+    {
+      "path": "providers/provider-gemini"
+    },
+    {
+      "path": "providers/provider-kimi"
+    },
+    {
+      "path": "providers/provider-deepseek"
+    },
+    {
+      "path": "providers/provider-groq"
+    },
+    {
+      "path": "providers/provider-ollama"
+    },
+    {
+      "path": "apps/backend"
+    },
+    {
+      "path": "apps/dashboard"
+    },
+    {
+      "path": "apps/ai-gateway"
+    },
+    {
+      "path": "apps/api-gateway"
+    }
   ]
 }

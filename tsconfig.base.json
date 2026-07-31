@@ -18,10 +18,15 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@agentic/sdk": ["packages/sdk/dist/src/index", "packages/sdk/src/index"],
+      "@agentic/sdk": ["packages/sdk/dist/index.d.ts", "packages/sdk/src/index"],
+      "@infrashield/ai-core": ["packages/ai-core/dist/index.d.ts", "packages/ai-core/src/index"],
+      "@infrashield/core-infrastructure": [
+        "packages/core-infrastructure/dist/index.d.ts",
+        "packages/core-infrastructure/src/index"
+      ],
       "@infrashield/*": [
-        "packages/*/dist/src/index",
-        "providers/*/dist/src/index",
+        "packages/*/dist/index.d.ts",
+        "providers/*/dist/index.d.ts",
         "packages/*/src/index",
         "providers/*/src/index"
       ]

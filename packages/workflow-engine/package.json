@@ -3,14 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b tsconfig.build.json",
     "lint": "eslint . --ext .ts",
     "test": "vitest run"
   },
   "dependencies": {
     "@infrashield/context": "workspace:*",
     "@infrashield/contracts": "workspace:*",
-    "@infrashield/runtime": "workspace:*"
+    "@infrashield/runtime": "workspace:*",
+    "@infrashield/core-infrastructure": "workspace:*"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts"
