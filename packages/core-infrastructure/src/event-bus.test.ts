@@ -556,6 +556,40 @@ describe('event bus', () => {
     expect(result.succeeded).toBe(false);
   });
 
+  it('completes concurrency tracking for aborted dispatches', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('aborted-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('aborted-handler');
+    const metrics = new EventMetrics();
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      undefined,
+      metrics,
+    );
+    const controller = new AbortController();
+    controller.abort();
+
+    await dispatcher.dispatch(new UserCreatedEvent({ userId: '42' }), {
+      signal: controller.signal,
+    });
+
+    const snapshot = metrics.snapshot();
+
+    expect(snapshot.counters.activeExecutions).toBe(0);
+    expect(snapshot.counters.failedDispatches).toBe(1);
+    expect(snapshot.counters.successfulDispatches).toBe(0);
+  });
+
   it('supports concurrent dispatches', async () => {
     const services = new ServiceCollection();
     const counterToken = createInjectionToken<CounterService>('counter');

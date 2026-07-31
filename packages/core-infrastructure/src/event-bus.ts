@@ -1169,91 +1169,121 @@ export class EventDispatcher {
     const startedAt = new Date().toISOString();
     const statistics = new DispatchStatistics(startedAt);
     this.metrics?.recordConcurrentExecution();
-    this.tracer?.record(event, event.correlationId, 'dispatch-started');
-    const dispatchContext = new EventDispatchContext(
-      event,
-      options.signal,
-      event.correlationId,
-      event.source,
-      options.context?.properties ?? {},
-      startedAt,
-    );
-
-    if (dispatchContext.signal?.aborted) {
-      this.metrics?.recordDispatchResult(false);
-      this.tracer?.record(event, event.correlationId, 'dispatch-cancelled');
-      statistics.cancelled = true;
-      statistics.completedAt = new Date().toISOString();
-      statistics.durationMs = 0;
-      return new DispatchResult(event, dispatchContext, statistics, [], [], statistics.completedAt);
-    }
-
-    const executionContexts: EventExecutionContext<TEvent>[] = [];
-    const errors: Error[] = [];
-    const middlewareContext = new EventMiddlewareContext<TEvent>(event, dispatchContext);
 
     try {
-      await this.pipeline.execute(middlewareContext, async () => {
-        const handlers = this.handlerResolver.resolve(event);
-        statistics.resolvedHandlers = handlers.length;
+      this.tracer?.record(event, event.correlationId, 'dispatch-started');
+      const dispatchContext = new EventDispatchContext(
+        event,
+        options.signal,
+        event.correlationId,
+        event.source,
+        options.context?.properties ?? {},
+        startedAt,
+      );
 
-        if (handlers.length === 0) {
-          statistics.missingHandlers = 1;
-          statistics.completedAt = new Date().toISOString();
-          statistics.durationMs = 0;
-          return;
-        }
+      if (dispatchContext.signal?.aborted) {
+        this.metrics?.recordDispatchResult(false);
+        this.metrics?.recordLatency(0);
+        this.tracer?.record(event, event.correlationId, 'dispatch-cancelled');
+        statistics.cancelled = true;
+        statistics.completedAt = new Date().toISOString();
+        statistics.durationMs = 0;
+        return new DispatchResult(
+          event,
+          dispatchContext,
+          statistics,
+          [],
+          [],
+          statistics.completedAt,
+        );
+      }
 
-        for (const [index, handler] of handlers.entries()) {
-          dispatchContext.ensureNotCancelled();
+      const executionContexts: EventExecutionContext<TEvent>[] = [];
+      const errors: Error[] = [];
+      const middlewareContext = new EventMiddlewareContext<TEvent>(event, dispatchContext);
 
-          const executionContext = new EventExecutionContext<TEvent>(
-            event,
-            dispatchContext,
-            handler,
-            index,
-          );
+      try {
+        await this.pipeline.execute(middlewareContext, async () => {
+          const handlers = this.handlerResolver.resolve(event);
+          statistics.resolvedHandlers = handlers.length;
 
-          try {
-            const handlerStartedAt = Date.now();
-            const executionResult = this.retryExecutor
-              ? await this.retryExecutor.execute({
-                  event,
-                  handler,
-                  policy: options.retryPolicy,
-                  dispatchContext,
-                  deadLetterQueue: options.deadLetterQueue,
-                })
-              : await this.executeOnce(event, handler);
-            const handlerDurationMs = Date.now() - handlerStartedAt;
-            this.metrics?.recordHandlerExecution(handlerDurationMs);
-            this.tracer?.record(event, event.correlationId, 'handler-executed');
+          if (handlers.length === 0) {
+            statistics.missingHandlers = 1;
+            statistics.completedAt = new Date().toISOString();
+            statistics.durationMs = 0;
+            return;
+          }
 
-            if (executionResult.attempts > 1) {
-              statistics.retryAttempts += executionResult.attempts - 1;
-              this.metrics?.recordRetryAttempt();
-            }
+          for (const [index, handler] of handlers.entries()) {
+            dispatchContext.ensureNotCancelled();
 
-            if (executionResult.succeeded) {
-              statistics.executedHandlers += 1;
-              executionContexts.push(
-                new EventExecutionContext<TEvent>(
-                  event,
-                  dispatchContext,
-                  handler,
-                  index,
-                  executionContext.startedAt,
-                  new Date().toISOString(),
-                  'succeeded',
-                ),
-              );
-            } else {
-              statistics.failedHandlers += 1;
-              if (executionResult.outcome === 'dead-lettered') {
-                statistics.deadLetteredEvents += 1;
-                this.metrics?.recordDeadLetter();
+            const executionContext = new EventExecutionContext<TEvent>(
+              event,
+              dispatchContext,
+              handler,
+              index,
+            );
+
+            try {
+              const handlerStartedAt = Date.now();
+              const executionResult = this.retryExecutor
+                ? await this.retryExecutor.execute({
+                    event,
+                    handler,
+                    policy: options.retryPolicy,
+                    dispatchContext,
+                    deadLetterQueue: options.deadLetterQueue,
+                  })
+                : await this.executeOnce(event, handler);
+              const handlerDurationMs = Date.now() - handlerStartedAt;
+              this.metrics?.recordHandlerExecution(handlerDurationMs);
+              this.tracer?.record(event, event.correlationId, 'handler-executed');
+
+              if (executionResult.attempts > 1) {
+                statistics.retryAttempts += executionResult.attempts - 1;
+                this.metrics?.recordRetryAttempt();
               }
-              errors.push(executionResult.error ?? new EventBusError('Handler execution failed.'));
+
+              if (executionResult.succeeded) {
+                statistics.executedHandlers += 1;
+                executionContexts.push(
+                  new EventExecutionContext<TEvent>(
+                    event,
+                    dispatchContext,
+                    handler,
+                    index,
+                    executionContext.startedAt,
+                    new Date().toISOString(),
+                    'succeeded',
+                  ),
+                );
+              } else {
+                statistics.failedHandlers += 1;
+                if (executionResult.outcome === 'dead-lettered') {
+                  statistics.deadLetteredEvents += 1;
+                  this.metrics?.recordDeadLetter();
+                }
+                errors.push(
+                  executionResult.error ?? new EventBusError('Handler execution failed.'),
+                );
+                executionContexts.push(
+                  new EventExecutionContext<TEvent>(
+                    event,
+                    dispatchContext,
+                    handler,
+                    index,
+                    executionContext.startedAt,
+                    new Date().toISOString(),
+                    'failed',
+                    executionResult.error,
+                  ),
+                );
+              }
+            } catch (error) {
+              statistics.failedHandlers += 1;
+              const wrapped =
+                error instanceof Error ? error : new EventBusError('Handler execution failed.');
+              errors.push(wrapped);
               executionContexts.push(
                 new EventExecutionContext<TEvent>(
                   event,
@@ -1263,74 +1293,58 @@ export class EventDispatcher {
                   executionContext.startedAt,
                   new Date().toISOString(),
                   'failed',
-                  executionResult.error,
+                  wrapped,
                 ),
               );
             }
-          } catch (error) {
-            statistics.failedHandlers += 1;
-            const wrapped =
-              error instanceof Error ? error : new EventBusError('Handler execution failed.');
-            errors.push(wrapped);
-            executionContexts.push(
-              new EventExecutionContext<TEvent>(
-                event,
-                dispatchContext,
-                handler,
-                index,
-                executionContext.startedAt,
-                new Date().toISOString(),
-                'failed',
-                wrapped,
-              ),
-            );
           }
+        });
+      } catch (error) {
+        const wrapped =
+          error instanceof Error ? error : new EventBusError('Handler resolution failed.');
+        errors.push(wrapped);
+        statistics.failedHandlers += 1;
+      }
+
+      statistics.completedAt = new Date().toISOString();
+      statistics.durationMs = Date.now() - new Date(startedAt).getTime();
+      this.metrics?.recordLatency(statistics.durationMs);
+      this.metrics?.recordDispatchResult(errors.length === 0 && statistics.missingHandlers === 0);
+      this.tracer?.record(event, event.correlationId, 'dispatch-completed');
+      if (this.tracer && this.healthCheck) {
+        const metricsSnapshot = this.metrics?.snapshot();
+        const baseSnapshot =
+          metricsSnapshot ??
+          new EventPerformanceSnapshot(
+            new EventCounters(),
+            new EventStatistics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+          );
+        this.tracer.recordHealth(this.healthCheck.evaluate(baseSnapshot));
+      }
+      const snapshots = await Promise.allSettled(
+        this.observers.map(async (observer) => {
+          const snapshot = this.createSnapshot(event, statistics, errors, executionContexts);
+          await observer.onEventObserved(snapshot);
+        }),
+      );
+
+      snapshots.forEach((snapshot) => {
+        if (snapshot.status === 'rejected') {
+          this.metrics?.recordObserverFailure();
         }
       });
-    } catch (error) {
-      const wrapped =
-        error instanceof Error ? error : new EventBusError('Handler resolution failed.');
-      errors.push(wrapped);
-      statistics.failedHandlers += 1;
+
+      return new DispatchResult(
+        event,
+        dispatchContext,
+        statistics,
+        errors,
+        executionContexts,
+        statistics.completedAt,
+      );
+    } finally {
+      this.metrics?.completeConcurrentExecution();
     }
-
-    statistics.completedAt = new Date().toISOString();
-    statistics.durationMs = Date.now() - new Date(startedAt).getTime();
-    this.metrics?.recordLatency(statistics.durationMs);
-    this.metrics?.recordDispatchResult(errors.length === 0 && statistics.missingHandlers === 0);
-    this.metrics?.completeConcurrentExecution();
-    this.tracer?.record(event, event.correlationId, 'dispatch-completed');
-    if (this.tracer && this.healthCheck) {
-      const metricsSnapshot = this.metrics?.snapshot();
-      const baseSnapshot =
-        metricsSnapshot ??
-        new EventPerformanceSnapshot(
-          new EventCounters(),
-          new EventStatistics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-        );
-      this.tracer.recordHealth(this.healthCheck.evaluate(baseSnapshot));
-    }
-    const snapshots = await Promise.allSettled(
-      this.observers.map(async (observer) => {
-        const snapshot = this.createSnapshot(event, statistics, errors, executionContexts);
-        await observer.onEventObserved(snapshot);
-      }),
-    );
-
-    snapshots.forEach((snapshot) => {
-      if (snapshot.status === 'rejected') {
-        this.metrics?.recordObserverFailure();
-      }
-    });
-
-    return new DispatchResult(
-      event,
-      dispatchContext,
-      statistics,
-      errors,
-      executionContexts,
-      statistics.completedAt,
-    );
   }
 
   private createSnapshot<TEvent extends IEvent>(
