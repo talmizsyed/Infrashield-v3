@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { createInjectionToken, ServiceCollection, ServiceProvider } from './di';
 import {
   EventBase,
   type EventCategory,
@@ -9,6 +10,8 @@ import {
   EventPriority,
   type IEvent,
   type IEventHandler,
+  EventDispatcher,
+  HandlerResolver,
   EventPublisher,
   SubscriptionBuilder,
   SubscriptionRegistry,
@@ -35,6 +38,38 @@ class RecordingHandler implements IEventHandler<UserCreatedEvent> {
 
   public async handle(event: UserCreatedEvent): Promise<void> {
     this.handledEvents.push(event);
+  }
+}
+
+class CounterService {
+  public readonly calls: string[] = [];
+}
+
+class InjectedHandler implements IEventHandler<UserCreatedEvent> {
+  public constructor(private readonly counter: CounterService) {}
+
+  public async handle(event: UserCreatedEvent): Promise<void> {
+    this.counter.calls.push(event.payload.userId);
+  }
+}
+
+class OrderedHandler implements IEventHandler<UserCreatedEvent> {
+  public constructor(
+    private readonly counter: CounterService,
+    private readonly label: string,
+  ) {}
+
+  public async handle(event: UserCreatedEvent): Promise<void> {
+    this.counter.calls.push(`${this.label}:${event.payload.userId}`);
+  }
+}
+
+class ThrowingHandler implements IEventHandler<UserCreatedEvent> {
+  public constructor(private readonly counter: CounterService) {}
+
+  public async handle(event: UserCreatedEvent): Promise<void> {
+    this.counter.calls.push(`throw:${event.payload.userId}`);
+    throw new Error(`boom:${event.payload.userId}`);
   }
 }
 
@@ -177,5 +212,147 @@ describe('event bus', () => {
 
     expect(registry.getSubscriptions(UserCreatedEvent.name)).toHaveLength(5);
     expect(publisher.preparedEvents).toHaveLength(3);
+  });
+
+  it('dispatches a single handler through the dependency injection container', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('user-created');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+    );
+    const event = new UserCreatedEvent({ userId: '42' });
+
+    const result = await dispatcher.dispatch(event);
+    console.log('single-result', result.succeeded, result.errors, result.statistics);
+
+    expect(result.succeeded).toBe(true);
+    expect(result.statistics.executedHandlers).toBe(1);
+    expect(result.statistics.resolvedHandlers).toBe(1);
+    expect(provider.Resolve(counterToken).calls).toEqual(['42']);
+  });
+
+  it('dispatches multiple handlers in registration order', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('ordered');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new OrderedHandler(provider.Resolve(counterToken), 'first'),
+    );
+    services.AddTransient(
+      handlerToken,
+      (provider) => new OrderedHandler(provider.Resolve(counterToken), 'second'),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+    );
+    const event = new UserCreatedEvent({ userId: '42' });
+
+    const result = await dispatcher.dispatch(event);
+
+    expect(result.statistics.executedHandlers).toBe(2);
+    expect(provider.Resolve(counterToken).calls).toEqual(['first:42', 'second:42']);
+  });
+
+  it('aggregates handler failures without corrupting dispatcher state', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('failing');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new ThrowingHandler(provider.Resolve(counterToken)),
+    );
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+    );
+    const event = new UserCreatedEvent({ userId: '42' });
+
+    const result = await dispatcher.dispatch(event);
+
+    expect(result.succeeded).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.statistics.failedHandlers).toBe(1);
+    expect(result.statistics.executedHandlers).toBe(1);
+    expect(provider.Resolve(counterToken).calls).toEqual(['throw:42', '42']);
+  });
+
+  it('supports cancellation and reports cancelled dispatches', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('cancelled');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+    );
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await dispatcher.dispatch(new UserCreatedEvent({ userId: '42' }), {
+      signal: controller.signal,
+    });
+
+    expect(result.statistics.cancelled).toBe(true);
+    expect(result.statistics.executedHandlers).toBe(0);
+    expect(result.succeeded).toBe(false);
+  });
+
+  it('supports concurrent dispatches', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('concurrent');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+    );
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        dispatcher.dispatch(new UserCreatedEvent({ userId: String(index) })),
+      ),
+    );
+
+    expect(results).toHaveLength(5);
+    expect(results.every((result) => result.succeeded)).toBe(true);
+    expect(provider.Resolve(counterToken).calls).toHaveLength(5);
   });
 });

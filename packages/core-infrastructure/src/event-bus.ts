@@ -1,3 +1,5 @@
+import type { InjectionToken, IServiceProvider } from './di';
+
 export type EventPriority = 'low' | 'normal' | 'high' | 'critical';
 export type EventCategory = 'domain' | 'integration' | 'application' | 'system';
 
@@ -304,6 +306,240 @@ export class EventPublisher implements IEventPublisher {
     this.validateEvent(event);
     this.registry.lookup(event);
     this.preparedEvents.push(event.toEnvelope());
+  }
+
+  private validateEvent<TEvent extends IEvent>(event: TEvent): void {
+    if (!event || typeof event !== 'object') {
+      throw new EventBusError('Event must be a non-null object.');
+    }
+
+    if (!event.metadata || typeof event.metadata !== 'object') {
+      throw new EventBusError('Event metadata is missing.');
+    }
+
+    if (
+      !event.eventType ||
+      typeof event.eventType !== 'string' ||
+      event.eventType.trim().length === 0
+    ) {
+      throw new EventBusError('Invalid event type.');
+    }
+  }
+}
+
+export interface EventDispatchOptions {
+  readonly signal?: AbortSignal;
+  readonly context?: EventContext;
+}
+
+export class EventDispatchContext {
+  public constructor(
+    public readonly event: IEvent,
+    public readonly signal: AbortSignal | undefined,
+    public readonly correlationId: string | undefined = event.correlationId,
+    public readonly source: string = event.source,
+    public readonly properties: Record<string, unknown> = {},
+    public readonly startedAt: string = new Date().toISOString(),
+  ) {}
+
+  public ensureNotCancelled(): void {
+    if (this.signal?.aborted) {
+      throw new EventBusError('Dispatch cancelled.');
+    }
+  }
+}
+
+export class EventExecutionContext<TEvent extends IEvent = IEvent> {
+  public constructor(
+    public readonly event: TEvent,
+    public readonly dispatchContext: EventDispatchContext,
+    public readonly handler: IEventHandler<TEvent>,
+    public readonly index: number,
+    public readonly startedAt: string = new Date().toISOString(),
+    public readonly completedAt: string | undefined = undefined,
+    public readonly status: 'pending' | 'succeeded' | 'failed' | 'cancelled' = 'pending',
+    public readonly error: Error | undefined = undefined,
+  ) {}
+}
+
+export class DispatchStatistics {
+  public executedHandlers = 0;
+  public resolvedHandlers = 0;
+  public failedHandlers = 0;
+  public missingHandlers = 0;
+  public cancelled = false;
+  public startedAt: string;
+  public completedAt: string | undefined;
+  public durationMs = 0;
+
+  public constructor(startedAt: string = new Date().toISOString()) {
+    this.startedAt = startedAt;
+  }
+}
+
+export class DispatchResult<TEvent extends IEvent = IEvent> {
+  public constructor(
+    public readonly event: TEvent,
+    public readonly dispatchContext: EventDispatchContext,
+    public readonly statistics: DispatchStatistics,
+    public readonly errors: readonly Error[] = [],
+    public readonly executionContexts: readonly EventExecutionContext<TEvent>[] = [],
+    public readonly completedAt: string = new Date().toISOString(),
+  ) {}
+
+  public get succeeded(): boolean {
+    return (
+      this.errors.length === 0 &&
+      this.statistics.missingHandlers === 0 &&
+      !this.statistics.cancelled
+    );
+  }
+}
+
+export class HandlerResolver {
+  public constructor(
+    private readonly provider: IServiceProvider,
+    private readonly tokenFactory: <TEvent extends IEvent>(
+      event: TEvent,
+    ) => InjectionToken<IEventHandler<TEvent>>,
+  ) {}
+
+  public resolve<TEvent extends IEvent>(event: TEvent): readonly IEventHandler<TEvent>[] {
+    if (!event || typeof event !== 'object') {
+      throw new EventBusError('Event must be a non-null object.');
+    }
+
+    const token = this.tokenFactory(event);
+    const candidates = this.provider.ResolveAll(token) as readonly unknown[];
+    return candidates.map((candidate) => this.validateHandler<TEvent>(candidate));
+  }
+
+  private validateHandler<TEvent extends IEvent>(handler: unknown): IEventHandler<TEvent> {
+    if (!handler || (typeof handler !== 'object' && typeof handler !== 'function')) {
+      throw new EventBusError('Invalid handler registration.');
+    }
+
+    const candidate = handler as Partial<IEventHandler<TEvent>>;
+    if (typeof candidate.handle !== 'function') {
+      throw new EventBusError('Invalid handler registration.');
+    }
+
+    return handler as IEventHandler<TEvent>;
+  }
+}
+
+export class EventDispatcher {
+  public constructor(
+    private readonly provider: IServiceProvider,
+    private readonly handlerResolver: HandlerResolver,
+  ) {}
+
+  public async dispatch<TEvent extends IEvent>(
+    event: TEvent,
+    options: EventDispatchOptions = {},
+  ): Promise<DispatchResult<TEvent>> {
+    this.validateEvent(event);
+
+    const startedAt = new Date().toISOString();
+    const statistics = new DispatchStatistics(startedAt);
+    const dispatchContext = new EventDispatchContext(
+      event,
+      options.signal,
+      event.correlationId,
+      event.source,
+      options.context?.properties ?? {},
+      startedAt,
+    );
+
+    if (dispatchContext.signal?.aborted) {
+      statistics.cancelled = true;
+      statistics.completedAt = new Date().toISOString();
+      statistics.durationMs = 0;
+      return new DispatchResult(event, dispatchContext, statistics, [], [], statistics.completedAt);
+    }
+
+    const executionContexts: EventExecutionContext<TEvent>[] = [];
+    const errors: Error[] = [];
+
+    try {
+      const handlers = this.handlerResolver.resolve(event);
+      statistics.resolvedHandlers = handlers.length;
+
+      if (handlers.length === 0) {
+        statistics.missingHandlers = 1;
+        statistics.completedAt = new Date().toISOString();
+        statistics.durationMs = 0;
+        return new DispatchResult(
+          event,
+          dispatchContext,
+          statistics,
+          errors,
+          executionContexts,
+          statistics.completedAt,
+        );
+      }
+
+      for (const [index, handler] of handlers.entries()) {
+        dispatchContext.ensureNotCancelled();
+
+        const executionContext = new EventExecutionContext<TEvent>(
+          event,
+          dispatchContext,
+          handler,
+          index,
+        );
+
+        try {
+          await handler.handle(event);
+          statistics.executedHandlers += 1;
+          executionContexts.push(
+            new EventExecutionContext<TEvent>(
+              event,
+              dispatchContext,
+              handler,
+              index,
+              executionContext.startedAt,
+              new Date().toISOString(),
+              'succeeded',
+            ),
+          );
+        } catch (error) {
+          statistics.failedHandlers += 1;
+          const wrapped =
+            error instanceof Error ? error : new EventBusError('Handler execution failed.');
+          errors.push(wrapped);
+          executionContexts.push(
+            new EventExecutionContext<TEvent>(
+              event,
+              dispatchContext,
+              handler,
+              index,
+              executionContext.startedAt,
+              new Date().toISOString(),
+              'failed',
+              wrapped,
+            ),
+          );
+        }
+      }
+    } catch (error) {
+      const wrapped =
+        error instanceof Error ? error : new EventBusError('Handler resolution failed.');
+      errors.push(wrapped);
+      statistics.failedHandlers += 1;
+    }
+
+    statistics.completedAt = new Date().toISOString();
+    statistics.durationMs = Date.now() - new Date(startedAt).getTime();
+
+    return new DispatchResult(
+      event,
+      dispatchContext,
+      statistics,
+      errors,
+      executionContexts,
+      statistics.completedAt,
+    );
   }
 
   private validateEvent<TEvent extends IEvent>(event: TEvent): void {

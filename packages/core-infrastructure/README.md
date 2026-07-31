@@ -258,7 +258,55 @@ const event = new UserCreatedEvent('42');
 const envelope = event.toEnvelope();
 ```
 
-## Best Practices
+## Event Dispatcher
+
+Story 6.3 adds an in-process event dispatcher that resolves handlers through the DI container and executes strongly typed events without introducing runtime, AI, plugin, or distributed transport integration.
+
+### Dispatch Lifecycle
+
+1. The dispatcher validates the incoming event and creates an isolated dispatch context.
+2. The handler resolver asks the DI provider for all registered handlers for the event token.
+3. Each resolved handler is executed sequentially in registration order.
+4. Handler failures are captured as execution errors without corrupting the dispatcher state.
+5. The dispatcher returns a `DispatchResult` containing statistics, execution contexts, and any accumulated errors.
+
+### Handler Resolution
+
+Handlers are resolved from the container through `HandlerResolver`, which uses an event-to-token mapping strategy and never instantiates handlers directly. This keeps handler construction aligned with the provider’s lifetime and dependency resolution rules.
+
+### Execution Flow
+
+```ts
+import {
+  EventBase,
+  EventDispatcher,
+  HandlerResolver,
+  type EventCategory,
+  type EventPriority,
+} from '@infrashield/core-infrastructure';
+
+class UserCreatedEvent extends EventBase<{ userId: string }> {
+  public constructor(userId: string) {
+    super(
+      { userId },
+      {
+        source: 'users',
+        category: 'domain' as EventCategory,
+        priority: 'normal' as EventPriority,
+        version: 1,
+      },
+    );
+  }
+}
+
+const provider = new ServiceProvider(services);
+const resolver = new HandlerResolver(provider, () => handlerToken);
+const dispatcher = new EventDispatcher(provider, resolver);
+
+await dispatcher.dispatch(new UserCreatedEvent('42'));
+```
+
+### Best Practices
 
 - Register all services during startup in a single composition root.
 - Use explicit lifetimes (`AddSingleton`, `AddScoped`, `AddTransient`) to communicate intent.
@@ -269,6 +317,7 @@ const envelope = event.toEnvelope();
 - Keep the provider focused on deterministic object resolution and lifecycle ownership.
 - Implement disposal-aware services when the container should release external resources or subscriptions.
 - Favor constructor injection for type-based services so dependency graphs remain explicit and inspectable.
+- Keep dispatch handlers focused and side-effect-free where possible; failures should be handled by the dispatcher result contract rather than by mutating shared state.
 
 ## Extension Guide
 
