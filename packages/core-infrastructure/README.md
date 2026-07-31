@@ -319,6 +319,51 @@ await dispatcher.dispatch(new UserCreatedEvent('42'));
 - Favor constructor injection for type-based services so dependency graphs remain explicit and inspectable.
 - Keep dispatch handlers focused and side-effect-free where possible; failures should be handled by the dispatcher result contract rather than by mutating shared state.
 
+## Event Bus Resilience
+
+Story 6.5 adds in-process retry, failure classification, and dead-letter handling for resilient event execution. The implementation stays entirely in-memory and does not introduce runtime, persistence, or distributed transport behavior.
+
+### Retry Lifecycle
+
+1. The dispatcher delegates handler execution to a `RetryExecutor` when a retry policy is supplied.
+2. The executor evaluates each failure through a `FailureClassifier` and decides whether to retry the handler.
+3. Retry delays are derived from a `RetryPolicy` using either a fixed delay or exponential backoff.
+4. Repeated failures eventually exhaust the configured attempts and become dead-letter candidates.
+
+### Failure Handling
+
+Retries are isolated per handler invocation and preserve the event metadata, correlation ID, and retry history. Permanent failures are not retried, transient failures are retried according to the configured policy, and unexpected failures are surfaced as execution errors.
+
+### Dead-Letter Processing
+
+When a handler exhausts retries or hits a permanent failure, the dispatcher records a `DeadLetterEntry` in an in-memory `DeadLetterQueue`. The queue remains thread-safe for concurrent publishing and exposes simple inspection helpers such as `size()`, `peek()`, and `drain()`.
+
+### Configuration Example
+
+```ts
+import {
+  DeadLetterQueue,
+  RetryExecutor,
+  RetryPolicy,
+  RetryStrategy,
+} from '@infrashield/core-infrastructure';
+
+const policy = new RetryPolicy({
+  maxAttempts: 3,
+  strategy: new RetryStrategy('exponential', 25, 200, 2),
+});
+
+const queue = new DeadLetterQueue();
+const retryExecutor = new RetryExecutor();
+```
+
+### Best Practices
+
+- Use retries only for transient failures such as timeouts or temporary resource contention.
+- Keep retry counts modest and prefer bounded backoff to avoid overwhelming downstream systems.
+- Preserve correlation IDs so retry and dead-letter analysis remains traceable.
+- Treat dead-letter entries as operational evidence and inspect them before reprocessing.
+
 ## Extension Guide
 
 You can extend the DI framework without changing existing interfaces:

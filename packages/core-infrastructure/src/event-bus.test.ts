@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createInjectionToken, ServiceCollection, ServiceProvider } from './di';
 import {
+  DeadLetterQueue,
   EventBase,
   type EventCategory,
   EventContext,
@@ -14,9 +15,13 @@ import {
   EventDispatcher,
   EventMiddlewareContext,
   EventPipelineBuilder,
+  FailureClassifier,
   HandlerResolver,
   EventPublisher,
   IEventMiddleware,
+  RetryExecutor,
+  RetryPolicy,
+  RetryStrategy,
   SubscriptionBuilder,
   SubscriptionRegistry,
 } from './event-bus';
@@ -74,6 +79,24 @@ class ThrowingHandler implements IEventHandler<UserCreatedEvent> {
   public async handle(event: UserCreatedEvent): Promise<void> {
     this.counter.calls.push(`throw:${event.payload.userId}`);
     throw new Error(`boom:${event.payload.userId}`);
+  }
+}
+
+class FlakyHandler implements IEventHandler<UserCreatedEvent> {
+  private attempts = 0;
+
+  public constructor(
+    private readonly counter: CounterService,
+    private readonly failTimes: number,
+  ) {}
+
+  public async handle(event: UserCreatedEvent): Promise<void> {
+    this.attempts += 1;
+    this.counter.calls.push(`flaky:${this.attempts}:${event.payload.userId}`);
+
+    if (this.attempts <= this.failTimes) {
+      throw new Error('transient timeout');
+    }
   }
 }
 
@@ -537,5 +560,163 @@ describe('event bus', () => {
     expect(results).toHaveLength(5);
     expect(results.every((result) => result.succeeded)).toBe(true);
     expect(provider.Resolve(counterToken).calls).toHaveLength(5);
+  });
+
+  it('retries transient failures until success', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('retry-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('flaky');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new FlakyHandler(provider.Resolve(counterToken), 2),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      new RetryExecutor(),
+    );
+
+    const result = await dispatcher.dispatch(new UserCreatedEvent({ userId: '42' }), {
+      retryPolicy: new RetryPolicy({
+        maxAttempts: 3,
+        strategy: new RetryStrategy('fixed', 0, 0),
+      }),
+    });
+
+    expect(result.succeeded).toBe(true);
+    expect(result.statistics.retryAttempts).toBe(2);
+    expect(provider.Resolve(counterToken).calls).toEqual([
+      'flaky:1:42',
+      'flaky:2:42',
+      'flaky:3:42',
+    ]);
+  });
+
+  it('supports no-retry policy and preserves single execution', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('no-retry-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('no-retry');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new ThrowingHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      new RetryExecutor(),
+    );
+
+    const result = await dispatcher.dispatch(new UserCreatedEvent({ userId: '42' }), {
+      retryPolicy: RetryPolicy.none(),
+    });
+
+    expect(result.succeeded).toBe(false);
+    expect(result.statistics.retryAttempts).toBe(0);
+    expect(result.statistics.failedHandlers).toBe(1);
+    expect(provider.Resolve(counterToken).calls).toEqual(['throw:42']);
+  });
+
+  it('uses fixed and exponential backoff strategies', () => {
+    const fixed = new RetryPolicy({
+      maxAttempts: 3,
+      strategy: new RetryStrategy('fixed', 10, 10),
+    });
+    const exponential = new RetryPolicy({
+      maxAttempts: 4,
+      strategy: new RetryStrategy('exponential', 10, 50, 2),
+    });
+
+    expect(fixed.getDelayMs(2)).toBe(10);
+    expect(exponential.getDelayMs(3)).toBe(40);
+    expect(exponential.getDelayMs(4)).toBe(50);
+  });
+
+  it('dead-letters exhausted retries and preserves metadata', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('dead-letter-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('dead-letter');
+    const queue = new DeadLetterQueue();
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new ThrowingHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      new RetryExecutor(),
+    );
+
+    const event = new UserCreatedEvent({ userId: '42' }, { correlationId: 'corr-42' });
+    const result = await dispatcher.dispatch(event, {
+      retryPolicy: new RetryPolicy({
+        maxAttempts: 3,
+        strategy: new RetryStrategy('fixed', 0, 0),
+      }),
+      deadLetterQueue: queue,
+    });
+
+    expect(result.succeeded).toBe(false);
+    expect(result.statistics.deadLetteredEvents).toBe(1);
+    expect(queue.size()).toBe(1);
+    expect(queue.peek()?.correlationId).toBe('corr-42');
+    expect(queue.peek()?.retryHistory).toHaveLength(3);
+    expect(queue.peek()?.event).toBe(event);
+  });
+
+  it('classifies failures and records retry statistics', () => {
+    const classifier = new FailureClassifier();
+
+    expect(classifier.classify(new Error('transient timeout'))).toBe('transient');
+    expect(classifier.classify(new Error('permanent validation failure'))).toBe('permanent');
+    expect(classifier.classify(new Error('unexpected state'))).toBe('unexpected');
+  });
+
+  it('supports concurrent retries without cross-talk', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('concurrent-retry-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('concurrent-retry');
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new FlakyHandler(provider.Resolve(counterToken), 1),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      new RetryExecutor(),
+    );
+
+    const results = await Promise.all(
+      Array.from({ length: 3 }, (_, index) =>
+        dispatcher.dispatch(new UserCreatedEvent({ userId: String(index) }), {
+          retryPolicy: new RetryPolicy({
+            maxAttempts: 2,
+            strategy: new RetryStrategy('fixed', 0, 0),
+          }),
+        }),
+      ),
+    );
+
+    expect(results.every((result) => result.succeeded)).toBe(true);
+    expect(provider.Resolve(counterToken).calls).toHaveLength(6);
   });
 });
