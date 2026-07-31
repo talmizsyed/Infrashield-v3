@@ -12,6 +12,7 @@ import {
   type IEvent,
   type IEventHandler,
   EventDelegate,
+  EventDiagnostics,
   EventDispatcher,
   EventHealth,
   EventHealthCheck,
@@ -777,6 +778,65 @@ describe('event bus', () => {
     expect(observer.snapshots).toHaveLength(1);
     expect(observer.snapshots[0]?.metrics.counters.successfulDispatches).toBe(1);
     expect(observer.snapshots[0]?.health.status).toBe('healthy');
+  });
+
+  it('aggregates metrics, tracing, and health through EventDiagnostics', async () => {
+    const metrics = new EventMetrics();
+    const tracer = new EventTracer();
+    const observer = new CollectingObserver();
+    const diagnostics = new EventDiagnostics(
+      metrics,
+      tracer,
+      new EventHealthCheck(() => new EventHealth('healthy', 'ok')),
+      [observer],
+    );
+    const event = new UserCreatedEvent({ userId: '42' }, { correlationId: 'corr-2' });
+
+    diagnostics.recordPublishedEvent();
+    diagnostics.recordDispatchResult(true);
+    diagnostics.recordHandlerExecution(5);
+    diagnostics.recordMiddlewareExecution(2);
+    diagnostics.recordLatency(12);
+    diagnostics.recordThroughput();
+    diagnostics.recordActivity(event, 'dispatch-started');
+
+    const snapshot = diagnostics.snapshot();
+
+    expect(snapshot.counters.publishedEvents).toBe(1);
+    expect(snapshot.counters.successfulDispatches).toBe(1);
+    expect(snapshot.statistics.averageLatencyMs).toBe(12);
+    expect(snapshot.activities).toHaveLength(1);
+    expect(snapshot.health?.status).toBe('healthy');
+  });
+
+  it('delivers snapshots to multiple observers', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('multi-obs-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('multi-obs-handler');
+    const metrics = new EventMetrics();
+    const firstObserver = new CollectingObserver();
+    const secondObserver = new CollectingObserver();
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      undefined,
+      metrics,
+      [new EventObserver(firstObserver), secondObserver],
+    );
+
+    await dispatcher.dispatch(new UserCreatedEvent({ userId: '42' }));
+
+    expect(firstObserver.snapshots).toHaveLength(1);
+    expect(secondObserver.snapshots).toHaveLength(1);
   });
 
   it('isolates observer failures and records them', async () => {

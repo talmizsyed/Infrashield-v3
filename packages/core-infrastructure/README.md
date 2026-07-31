@@ -258,6 +258,64 @@ const event = new UserCreatedEvent('42');
 const envelope = event.toEnvelope();
 ```
 
+## Event Bus Observability and Diagnostics
+
+Story 6 introduces a passive observability layer for the in-process event bus. The design keeps execution semantics untouched while exposing immutable snapshots for metrics, tracing, health evaluation, and observer notifications.
+
+### Metrics model
+
+- `EventMetrics` records published events, successful and failed dispatches, retry attempts, dead-lettered events, observer failures, middleware and handler execution counts, and latency samples.
+- `EventCounters` captures the current counts, while `EventStatistics` exposes aggregate latency and throughput values.
+- `EventPerformanceSnapshot` packages the counters and statistics into an immutable snapshot for downstream consumers.
+
+### Tracing and health
+
+- `EventTracer` records correlation-aware activity phases for each event and preserves them in an immutable trace snapshot.
+- `EventHealthCheck` evaluates a snapshot and returns a health classification such as healthy, degraded, or unhealthy.
+- `EventDiagnostics` composes metrics, tracing, health checks, and observers into a single extension-friendly entry point without imposing a logging implementation.
+
+### Observer model
+
+- `IEventObserver` defines the passive contract for receiving execution snapshots.
+- `EventObserver` adapts an observer implementation into the dispatcher pipeline.
+- Observer failures are isolated and counted so execution continues without interruption.
+
+### Usage example
+
+```ts
+import {
+  EventDiagnostics,
+  EventHealth,
+  EventHealthCheck,
+  EventMetrics,
+  EventTracer,
+  EventObserver,
+  type IEventObserver,
+  EventPerformanceSnapshot,
+} from '@infrashield/core-infrastructure';
+
+class RecordingObserver implements IEventObserver {
+  public async onEventObserved(snapshot: EventPerformanceSnapshot): Promise<void> {
+    void snapshot;
+  }
+}
+
+const diagnostics = new EventDiagnostics(
+  new EventMetrics(),
+  new EventTracer(),
+  new EventHealthCheck(() => new EventHealth('healthy', 'ok')),
+  [new EventObserver(new RecordingObserver())],
+);
+
+diagnostics.recordPublishedEvent();
+diagnostics.recordDispatchResult(true);
+diagnostics.recordLatency(12);
+```
+
+### Extension points
+
+The observability model is intentionally extension-ready for future integrations such as OpenTelemetry, Prometheus, Grafana, or Application Insights without introducing any runtime or exporter dependency in the core package.
+
 ## Event Dispatcher
 
 Story 6.3 adds an in-process event dispatcher that resolves handlers through the DI container and executes strongly typed events without introducing runtime, AI, plugin, or distributed transport integration.
