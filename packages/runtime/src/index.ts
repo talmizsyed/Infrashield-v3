@@ -79,7 +79,7 @@ export {
 export * from './runtime-scheduler.js';
 
 import type { Context } from '@infrashield/context';
-import type { Agent } from '@infrashield/agent-core';
+import type { IAgent } from '@infrashield/agent-core';
 import type {
   HealthReport,
   Identifier,
@@ -164,7 +164,7 @@ export interface LifecycleManager {
  * Scheduler interface for agent execution control.
  */
 export interface Scheduler {
-  schedule(agent: Agent, context: ExecutionContext): Promise<Result<ExecutionResult>>;
+  schedule(agent: IAgent, context: ExecutionContext): Promise<Result<ExecutionResult>>;
   cancel(executionId: Identifier): Promise<Result<void>>;
   listScheduled(): Promise<Result<readonly ExecutionContext[]>>;
 }
