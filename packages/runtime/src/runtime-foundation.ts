@@ -262,9 +262,20 @@ export interface IRuntimeObserver<TSnapshot> {
 }
 
 export interface IRuntimeMetrics {
+  recordQueued(): void;
   recordCompleted(durationMs: number): void;
   recordFailed(durationMs: number): void;
   recordCancelled(durationMs: number): void;
+  recordTimedOut(durationMs: number): void;
+  recordCheckpoint(): void;
+  recordTimeout(): void;
+  recordCancellation(): void;
+  recordPipelineDuration(durationMs: number): void;
+  recordMiddlewareDuration(durationMs: number): void;
+  recordSchedulerLatency(durationMs: number): void;
+  recordWorkerUtilization(utilization: number): void;
+  recordConcurrentExecution(): void;
+  recordThroughput(): void;
   snapshot(): RuntimeMetricsSnapshot;
 }
 
@@ -555,6 +566,10 @@ export class RuntimeExecution implements IRuntimeExecution {
       this._startedAt = new Date().toISOString();
     }
 
+    if (nextStatus === ExecutionStatus.Queued && this._metrics) {
+      this._metrics.recordQueued();
+    }
+
     void this._lifecycle.notify(this, from, nextStatus);
     this.recordTerminalMetric(nextStatus);
   }
@@ -580,7 +595,7 @@ export class RuntimeExecution implements IRuntimeExecution {
     }
 
     if (status === ExecutionStatus.TimedOut) {
-      this._metrics.recordCancelled(this.durationMs());
+      this._metrics.recordTimedOut(this.durationMs());
     }
   }
 
@@ -773,33 +788,117 @@ export class RuntimeMetrics implements IRuntimeMetrics {
   private completedCount = 0;
   private failedCount = 0;
   private cancelledCount = 0;
+  private timedOutCount = 0;
+  private queuedCount = 0;
+  private checkpointCount = 0;
+  private timeoutCount = 0;
+  private cancellationCount = 0;
+  private throughputCount = 0;
+  private concurrentExecutionCount = 0;
   private readonly durations: number[] = [];
+  private readonly pipelineDurations: number[] = [];
+  private readonly middlewareDurations: number[] = [];
+  private readonly schedulerLatencies: number[] = [];
+  private readonly workerUtilizations: number[] = [];
+
+  public recordQueued(): void {
+    this.queuedCount += 1;
+    this.concurrentExecutionCount += 1;
+  }
 
   public recordCompleted(durationMs: number): void {
     this.completedCount += 1;
     this.durations.push(durationMs);
+    this.concurrentExecutionCount = Math.max(0, this.concurrentExecutionCount - 1);
   }
 
   public recordFailed(durationMs: number): void {
     this.failedCount += 1;
     this.durations.push(durationMs);
+    this.concurrentExecutionCount = Math.max(0, this.concurrentExecutionCount - 1);
   }
 
   public recordCancelled(durationMs: number): void {
     this.cancelledCount += 1;
     this.durations.push(durationMs);
+    this.concurrentExecutionCount = Math.max(0, this.concurrentExecutionCount - 1);
+  }
+
+  public recordTimedOut(durationMs: number): void {
+    this.timedOutCount += 1;
+    this.durations.push(durationMs);
+    this.concurrentExecutionCount = Math.max(0, this.concurrentExecutionCount - 1);
+  }
+
+  public recordCheckpoint(): void {
+    this.checkpointCount += 1;
+  }
+
+  public recordTimeout(): void {
+    this.timeoutCount += 1;
+  }
+
+  public recordCancellation(): void {
+    this.cancellationCount += 1;
+  }
+
+  public recordPipelineDuration(durationMs: number): void {
+    this.pipelineDurations.push(durationMs);
+  }
+
+  public recordMiddlewareDuration(durationMs: number): void {
+    this.middlewareDurations.push(durationMs);
+  }
+
+  public recordSchedulerLatency(durationMs: number): void {
+    this.schedulerLatencies.push(durationMs);
+  }
+
+  public recordWorkerUtilization(utilization: number): void {
+    this.workerUtilizations.push(utilization);
+  }
+
+  public recordConcurrentExecution(): void {
+    this.concurrentExecutionCount += 1;
+  }
+
+  public recordThroughput(): void {
+    this.throughputCount += 1;
   }
 
   public snapshot(): RuntimeMetricsSnapshot {
     return {
-      executionCount: this.completedCount + this.failedCount + this.cancelledCount,
+      executionCount:
+        this.completedCount + this.failedCount + this.cancelledCount + this.timedOutCount,
       completed: this.completedCount,
       failed: this.failedCount,
       cancelled: this.cancelledCount,
       averageDurationMs: average(this.durations),
       maximumDurationMs: max(this.durations),
       minimumDurationMs: min(this.durations),
-      concurrentExecutions: 0,
+      concurrentExecutions: this.concurrentExecutionCount,
+      totalExecutions:
+        this.completedCount +
+        this.failedCount +
+        this.cancelledCount +
+        this.timedOutCount +
+        this.queuedCount,
+      successfulExecutions: this.completedCount,
+      failedExecutions: this.failedCount,
+      cancelledExecutions: this.cancelledCount,
+      timedOutExecutions: this.timedOutCount,
+      queuedExecutions: this.queuedCount,
+      averageExecutionDurationMs: average(this.durations),
+      maximumExecutionDurationMs: max(this.durations),
+      minimumExecutionDurationMs: min(this.durations),
+      pipelineDurationMs: average(this.pipelineDurations),
+      middlewareDurationMs: average(this.middlewareDurations),
+      schedulerLatencyMs: average(this.schedulerLatencies),
+      workerUtilization: average(this.workerUtilizations),
+      checkpointCount: this.checkpointCount,
+      timeoutCount: this.timeoutCount,
+      cancellationCount: this.cancellationCount,
+      throughput: this.throughputCount,
     };
   }
 }
@@ -813,6 +912,23 @@ export interface RuntimeMetricsSnapshot {
   readonly maximumDurationMs: number;
   readonly minimumDurationMs: number;
   readonly concurrentExecutions: number;
+  readonly totalExecutions: number;
+  readonly successfulExecutions: number;
+  readonly failedExecutions: number;
+  readonly cancelledExecutions: number;
+  readonly timedOutExecutions: number;
+  readonly queuedExecutions: number;
+  readonly averageExecutionDurationMs: number;
+  readonly maximumExecutionDurationMs: number;
+  readonly minimumExecutionDurationMs: number;
+  readonly pipelineDurationMs: number;
+  readonly middlewareDurationMs: number;
+  readonly schedulerLatencyMs: number;
+  readonly workerUtilization: number;
+  readonly checkpointCount: number;
+  readonly timeoutCount: number;
+  readonly cancellationCount: number;
+  readonly throughput: number;
 }
 
 export interface RuntimeExecutionDefinitionOptions {

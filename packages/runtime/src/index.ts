@@ -14,7 +14,68 @@ export * from './registry.js';
 export * from './retry.js';
 export * from './runtime-engine.js';
 export * from './runtime-foundation.js';
-export * from './runtime-resilience.js';
+export {
+  CheckpointException,
+  CheckpointValidationException,
+  CancellationException,
+  RecoveryHintException,
+  RuntimeCancellationManager,
+  RuntimeCheckpoint,
+  RuntimeCheckpointBuilder,
+  RuntimeCheckpointManager,
+  RuntimeCheckpointSnapshot,
+  RuntimeExecutionHistory,
+  RuntimeExecutionHistoryEntry,
+  RuntimeExecutionSnapshot,
+  RuntimeExecutionTimeline,
+  RuntimeExecutionTimelineEvent,
+  RuntimeExecutionTimelineSnapshot,
+  RuntimeRecoveryHint,
+  RuntimeResilienceEvent,
+  RuntimeResilienceEventBus,
+  RuntimeTimeoutDiagnostics,
+  RuntimeTimeoutManager,
+  RuntimeTimeoutRecord,
+  type IRuntimeCancellationManager,
+  type IRuntimeCheckpoint,
+  type IRuntimeCheckpointManager,
+  type IRuntimeExecutionSnapshot,
+  type IRuntimeRecoveryHint,
+  type IRuntimeTimeoutManager,
+} from './runtime-resilience.js';
+export {
+  PerformanceSnapshotException,
+  RuntimeActivity,
+  RuntimeActivitySnapshot,
+  RuntimeCounters,
+  RuntimeDiagnostics,
+  RuntimeDiagnosticsException,
+  RuntimeDiagnosticsSnapshot,
+  RuntimeHealth,
+  RuntimeHealthCheck,
+  RuntimeHealthException,
+  RuntimeHealthSnapshot,
+  RuntimeHealthStatus,
+  RuntimeObservabilityEvent,
+  RuntimeObserver,
+  RuntimeObserverCollection,
+  RuntimeObserverException,
+  RuntimePerformanceSnapshot,
+  RuntimeStatistics,
+  RuntimeTrace,
+  RuntimeTraceContext,
+  RuntimeTraceContextSnapshot,
+  RuntimeTraceException,
+  RuntimeTraceOptions,
+  RuntimeTraceSnapshot,
+  RuntimeTraceStatus,
+  RuntimeTracer,
+  type IRuntimeDiagnostics,
+  type IRuntimeHealth,
+  type IRuntimeHealthCheck,
+  type IRuntimePerformanceSnapshot,
+  type IRuntimeTracer,
+} from './runtime-observability.js';
 export * from './runtime-scheduler.js';
 
 import type { Context } from '@infrashield/context';
@@ -84,7 +145,7 @@ export interface ExecutionResult {
 /**
  * Runtime health contract for operational status.
  */
-export interface RuntimeHealth {
+export interface RuntimeHealthReport {
   readonly runtimeId: Identifier;
   readonly report: HealthReport;
 }
@@ -93,10 +154,10 @@ export interface RuntimeHealth {
  * Lifecycle manager interface for runtime lifecycle operations.
  */
 export interface LifecycleManager {
-  initialize(configuration: RuntimeConfiguration): Promise<Result<RuntimeHealth>>;
+  initialize(configuration: RuntimeConfiguration): Promise<Result<RuntimeHealthReport>>;
   start(): Promise<Result<void>>;
   stop(): Promise<Result<void>>;
-  getHealth(): Promise<Result<RuntimeHealth>>;
+  getHealth(): Promise<Result<RuntimeHealthReport>>;
 }
 
 /**
@@ -113,10 +174,10 @@ export interface Scheduler {
  */
 export interface Runtime {
   readonly configuration: RuntimeConfiguration;
-  readonly health: RuntimeHealth;
+  readonly health: RuntimeHealthReport;
 
   getRuntimeId(): Identifier;
   getConfiguration(): RuntimeConfiguration;
-  getHealth(): RuntimeHealth;
+  getHealth(): RuntimeHealthReport;
   emitEvent(event: RuntimeEvent): void;
 }

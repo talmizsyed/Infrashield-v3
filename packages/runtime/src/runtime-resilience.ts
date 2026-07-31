@@ -119,6 +119,13 @@ export interface RuntimeTimeoutRecord {
   readonly reason?: string;
 }
 
+export interface RuntimeExecutionHistoryEntry {
+  readonly executionId: string;
+  readonly status: ExecutionStatus;
+  readonly timestamp: string;
+  readonly metadata?: ExecutionMetadata;
+}
+
 export interface RuntimeExecutionTimelineEvent {
   readonly type: string;
   readonly timestamp: string;
@@ -609,14 +616,14 @@ export class RuntimeExecutionSnapshot implements IRuntimeExecutionSnapshot {
 }
 
 export class RuntimeExecutionHistory {
-  private readonly snapshots: RuntimeExecutionSnapshot[] = [];
+  private readonly entries: RuntimeExecutionHistoryEntry[] = [];
 
-  public record(snapshot: RuntimeExecutionSnapshot): void {
-    this.snapshots.push(snapshot);
+  public record(entry: RuntimeExecutionHistoryEntry): void {
+    this.entries.push(entry);
   }
 
-  public snapshot(): readonly RuntimeExecutionSnapshot[] {
-    return Object.freeze([...this.snapshots]);
+  public snapshot(): readonly RuntimeExecutionHistoryEntry[] {
+    return Object.freeze([...this.entries]);
   }
 }
 
