@@ -67,3 +67,26 @@ export {
 } from './workflow-execution-engine.js';
 export * from './workflow-execution-policy.js';
 export * from './workflow-execution-semantics.js';
+export {
+  WorkflowCheckpointException,
+  WorkflowExecutionCheckpoint,
+  WorkflowExecutionJournal,
+  WorkflowExecutionMetrics,
+  WorkflowPauseToken,
+  WorkflowResumeToken,
+  WorkflowPauseException,
+  WorkflowResumeException,
+  WorkflowState,
+  WorkflowStateMachine,
+  WorkflowStateMachineException,
+  WorkflowSuspensionContext,
+  WorkflowTransition,
+  WorkflowTransitionException,
+  WorkflowTransitionValidator,
+  type IWorkflowExecutionHistory,
+  type IWorkflowJournal,
+  type IWorkflowState,
+  type IWorkflowStateMachine,
+  type IWorkflowTransition,
+  type WorkflowCheckpointOptions,
+} from './workflow-state-machine.js';

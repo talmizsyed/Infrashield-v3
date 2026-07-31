@@ -101,3 +101,55 @@ const statistics = definition.statistics;
 snapshot.toJSON();
 snapshot.diagnostics();
 ```
+
+## Workflow state machine
+
+The workflow state machine is the authoritative lifecycle layer for long-running workflow execution. It stays deterministic and architecture-focused: it does not persist state, execute approvals, or coordinate distributed workers. Instead, it provides an immutable journal, immutable checkpoints, pause/resume tokens, suspension contexts, and transition metrics for orchestration layers to consume.
+
+```ts
+import { WorkflowStateMachine } from '@infrashield/workflow-engine';
+
+const machine = new WorkflowStateMachine({
+  workflowId: 'workflow-1',
+  correlationId: 'corr-1',
+  metadata: { owner: 'ops' },
+});
+
+machine.create();
+machine.validate();
+machine.start();
+machine.pause('waiting on dependency');
+machine.resume('dependency available');
+machine.wait('waiting for external signal');
+machine.complete({ executed: true });
+
+const snapshot = machine.snapshot();
+console.log(snapshot.state);
+console.log(snapshot.journal.transitions.length);
+```
+
+### Supported lifecycle states
+
+- Created
+- Validated
+- Ready
+- Running
+- Paused
+- Waiting
+- WaitingApproval
+- WaitingExternalEvent
+- Suspended
+- Retrying
+- Compensating
+- Completed
+- Cancelled
+- Failed
+- TimedOut
+
+### Long-running execution support
+
+- Pause and resume tokens for deterministic workflow re-entry
+- Suspension contexts for external intervention scenarios
+- Immutable checkpoints for progress and recovery metadata
+- Event publication through the public event-bus contract layer
+- Observability counters for transition count, pause duration, wait duration, retry duration, compensation duration, and checkpoint count
