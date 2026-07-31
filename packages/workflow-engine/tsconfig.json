@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist"
+  },
+  "references": [{ "path": "../contracts" }, { "path": "../context" }, { "path": "../runtime" }],
+  "include": ["src"],
+  "exclude": ["dist", "node_modules"]
+}

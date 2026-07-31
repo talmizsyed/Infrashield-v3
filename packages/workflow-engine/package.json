@@ -1,0 +1,17 @@
+{
+  "name": "@infrashield/workflow-engine",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@infrashield/context": "workspace:*",
+    "@infrashield/contracts": "workspace:*",
+    "@infrashield/runtime": "workspace:*"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}

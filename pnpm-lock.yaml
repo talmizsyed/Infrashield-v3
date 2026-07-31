@@ -68,12 +68,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
 
-  apps/workflow-engine:
-    dependencies:
-      '@infrashield/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-
   packages/agent-core:
     dependencies:
       '@infrashield/context':
@@ -154,6 +148,18 @@ importers:
   packages/types: {}
 
   packages/utils: {}
+
+  packages/workflow-engine:
+    dependencies:
+      '@infrashield/context':
+        specifier: workspace:*
+        version: link:../context
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@infrashield/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   providers/provider-anthropic: {}
 

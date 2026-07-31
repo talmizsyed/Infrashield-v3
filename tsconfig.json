@@ -16,6 +16,7 @@
     { "path": "packages/ai-prompts" },
     { "path": "packages/ai-tools" },
     { "path": "packages/sdk" },
+    { "path": "packages/workflow-engine" },
     { "path": "providers/provider-anthropic" },
     { "path": "providers/provider-openai" },
     { "path": "providers/provider-gemini" },
