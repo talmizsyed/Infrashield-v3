@@ -1234,12 +1234,14 @@ function isValidTransition(from: ExecutionStatus, to: ExecutionStatus): boolean 
       ExecutionStatus.Queued,
       ExecutionStatus.Starting,
       ExecutionStatus.Running,
+      ExecutionStatus.TimedOut,
     ],
     [ExecutionStatus.Queued]: [
       ExecutionStatus.Starting,
       ExecutionStatus.Running,
       ExecutionStatus.Cancelled,
       ExecutionStatus.Failed,
+      ExecutionStatus.TimedOut,
     ],
     [ExecutionStatus.Starting]: [
       ExecutionStatus.Running,

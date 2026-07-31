@@ -172,9 +172,47 @@ await scheduler.shutdown({ drain: true });
 - lease-based execution tracking for observability and timeout scenarios
 - queue health and statistics snapshots for monitoring and diagnostics
 
+## Resilience Layer
+
+The runtime package also exposes a generic in-memory resilience layer for timeouts, cancellation propagation, checkpoints, snapshots, timelines, and recovery hints. These primitives are intentionally compositional and avoid persistence, workflow-specific logic, or automatic recovery orchestration.
+
+```ts
+import {
+  RuntimeCancellationManager,
+  RuntimeCheckpointManager,
+  RuntimeExecutionTimeline,
+  RuntimeRecoveryHint,
+  RuntimeTimeoutManager,
+} from '@infrashield/runtime';
+
+const timeoutManager = new RuntimeTimeoutManager({ defaultTimeoutMs: 5000 });
+const cancellationManager = new RuntimeCancellationManager();
+const checkpointManager = new RuntimeCheckpointManager();
+const timeline = new RuntimeExecutionTimeline();
+
+timeline.record('created', { stage: 'init' });
+const checkpoint = checkpointManager.createCheckpoint(
+  new RuntimeExecution({
+    id: 'exec-3',
+    owner: { id: 'agent-3', type: 'agent' },
+    correlationId: 'corr-3',
+  }),
+  { version: 1 },
+);
+const hint = RuntimeRecoveryHint.fromCheckpoint(checkpoint, 'resume-from-checkpoint');
+```
+
+### Resilience capabilities
+
+- timeout managers publish timeout events and expose diagnostics for observability
+- cancellation managers support linked parent/child propagation and deterministic abort handling
+- checkpoint managers create ordered checkpoints with immutable snapshots and metadata
+- timeline objects capture ordered, immutable events for diagnostics and debugging
+- recovery hints provide structured, checkpoint-backed guidance without introducing storage or recovery engines
+
 ## Public API
 
-The package exports the core foundation types and implementations through the package entrypoint, including Runtime, RuntimeHost, RuntimeHostBuilder, RuntimeHostConfiguration, RuntimeHostContext, RuntimeHostDiagnostics, RuntimeHostServiceScope, RuntimeExecution, RuntimeContext, RuntimePipeline, RuntimeCancellation, RuntimeMetrics, RuntimeScheduler, RuntimeSchedulerBuilder, RuntimeQueue, RuntimeWorkerPool, and the lifecycle and exception types.
+The package exports the core foundation types and implementations through the package entrypoint, including Runtime, RuntimeHost, RuntimeHostBuilder, RuntimeHostConfiguration, RuntimeHostContext, RuntimeHostDiagnostics, RuntimeHostServiceScope, RuntimeExecution, RuntimeContext, RuntimePipeline, RuntimeCancellation, RuntimeMetrics, RuntimeScheduler, RuntimeSchedulerBuilder, RuntimeQueue, RuntimeWorkerPool, RuntimeTimeoutManager, RuntimeCancellationManager, RuntimeCheckpointManager, RuntimeCheckpointBuilder, RuntimeExecutionTimeline, RuntimeExecutionSnapshot, RuntimeRecoveryHint, and the lifecycle and exception types.
 
 ### RuntimeHostBuilder
 
