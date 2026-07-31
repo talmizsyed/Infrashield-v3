@@ -1,1 +1,1 @@
-export const name = 'ai-core';
+export * from './ai-gateway.js';
