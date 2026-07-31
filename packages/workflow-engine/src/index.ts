@@ -65,3 +65,5 @@ export {
   type IWorkflowExecutionPlan,
   type IWorkflowExecutionPlanner,
 } from './workflow-execution-engine.js';
+export * from './workflow-execution-policy.js';
+export * from './workflow-execution-semantics.js';

@@ -21,6 +21,39 @@ The workflow engine package provides the foundational workflow abstractions for 
 - WorkflowExecutionSnapshot: immutable snapshot of execution state and history.
 - WorkflowResult: concrete success or failure payload returned by the engine.
 
+## Policy framework
+
+The execution policy framework is intentionally declarative and runtime-agnostic. It lets a workflow declare retry, timeout, compensation, concurrency, failure, cancellation, approval, and rate-limit behavior through immutable policy objects that can be collected and registered without coupling the engine to execution implementation details.
+
+```ts
+import {
+  WorkflowPolicyCollection,
+  WorkflowRetryPolicy,
+  WorkflowTimeoutPolicy,
+  WorkflowPolicyRegistry,
+} from '@infrashield/workflow-engine';
+
+const timeoutPolicy = new WorkflowTimeoutPolicy({
+  id: 'timeout-1',
+  executionTimeoutMs: 5000,
+  dependsOn: [],
+});
+
+const retryPolicy = new WorkflowRetryPolicy({
+  id: 'retry-1',
+  maxAttempts: 3,
+  delayMs: 250,
+  dependsOn: ['timeout-1'],
+});
+
+const registry = new WorkflowPolicyRegistry();
+registry.register(timeoutPolicy);
+registry.register(retryPolicy);
+
+const collection = new WorkflowPolicyCollection([timeoutPolicy, retryPolicy]);
+collection.values.map((policy) => policy.snapshot());
+```
+
 ## Validation
 
 The workflow validator enforces the required contract:

@@ -10,10 +10,24 @@ import { ExecutionStatus, type IRuntime } from '@infrashield/runtime';
 export type WorkflowOwner = string;
 export type WorkflowTag = string;
 export type WorkflowDescription = string;
-export type WorkflowExecutionOptions = Readonly<{
-  readonly timeoutMs?: number;
-  readonly metadata?: SerializableValueObject;
-}>;
+
+export class WorkflowExecutionOptions {
+  public readonly timeoutMs?: number;
+  public readonly metadata?: SerializableValueObject;
+  public readonly policies?: readonly string[];
+
+  public constructor(
+    options: {
+      readonly timeoutMs?: number;
+      readonly metadata?: SerializableValueObject;
+      readonly policies?: readonly string[];
+    } = {},
+  ) {
+    this.timeoutMs = options.timeoutMs;
+    this.metadata = options.metadata ? Object.freeze({ ...options.metadata }) : undefined;
+    this.policies = options.policies ? Object.freeze([...options.policies]) : undefined;
+  }
+}
 
 export enum WorkflowState {
   Created = 'created',
