@@ -13,12 +13,19 @@ import {
   type IEventHandler,
   EventDelegate,
   EventDispatcher,
+  EventHealth,
+  EventHealthCheck,
+  EventMetrics,
   EventMiddlewareContext,
+  EventObserver,
+  EventPerformanceSnapshot,
   EventPipelineBuilder,
+  EventTracer,
   FailureClassifier,
   HandlerResolver,
   EventPublisher,
   IEventMiddleware,
+  IEventObserver,
   RetryExecutor,
   RetryPolicy,
   RetryStrategy,
@@ -143,6 +150,20 @@ class ThrowingMiddleware implements IEventMiddleware<UserCreatedEvent> {
       this.entries.push('throwing:after');
       throw error;
     }
+  }
+}
+
+class CollectingObserver implements IEventObserver {
+  public readonly snapshots: EventPerformanceSnapshot[] = [];
+
+  public async onEventObserved(snapshot: EventPerformanceSnapshot): Promise<void> {
+    this.snapshots.push(snapshot);
+  }
+}
+
+class ThrowingObserver implements IEventObserver {
+  public async onEventObserved(_snapshot: EventPerformanceSnapshot): Promise<void> {
+    throw new Error('observer failed');
   }
 }
 
@@ -718,5 +739,117 @@ describe('event bus', () => {
 
     expect(results.every((result) => result.succeeded)).toBe(true);
     expect(provider.Resolve(counterToken).calls).toHaveLength(6);
+  });
+
+  it('collects metrics, timings, and immutable snapshots', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('obs-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('obs-handler');
+    const metrics = new EventMetrics();
+    const observer = new CollectingObserver();
+    const wrappedObserver = new EventObserver(observer);
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      undefined,
+      metrics,
+      [wrappedObserver],
+    );
+
+    const event = new UserCreatedEvent({ userId: '42' });
+    const result = await dispatcher.dispatch(event);
+    const snapshot = metrics.snapshot();
+
+    expect(result.succeeded).toBe(true);
+    expect(snapshot.counters.publishedEvents).toBe(0);
+    expect(snapshot.counters.successfulDispatches).toBe(1);
+    expect(snapshot.counters.failedDispatches).toBe(0);
+    expect(snapshot.statistics.averageLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(observer.snapshots).toHaveLength(1);
+    expect(observer.snapshots[0]?.metrics.counters.successfulDispatches).toBe(1);
+    expect(observer.snapshots[0]?.health.status).toBe('healthy');
+  });
+
+  it('isolates observer failures and records them', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('obs-fail-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('obs-fail-handler');
+    const metrics = new EventMetrics();
+    const observer = new ThrowingObserver();
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      undefined,
+      metrics,
+      [observer],
+    );
+
+    await expect(
+      dispatcher.dispatch(new UserCreatedEvent({ userId: '42' })),
+    ).resolves.toBeDefined();
+
+    expect(metrics.snapshot().counters.failedObservers).toBe(1);
+  });
+
+  it('captures tracing and health snapshots for correlation-aware execution', async () => {
+    const services = new ServiceCollection();
+    const counterToken = createInjectionToken<CounterService>('obs-trace-counter');
+    const handlerToken = createInjectionToken<IEventHandler<UserCreatedEvent>>('obs-trace-handler');
+    const metrics = new EventMetrics();
+    const tracer = new EventTracer();
+    const healthCheck = new EventHealthCheck((current) => {
+      if (current.counters.failedDispatches > 0) {
+        return new EventHealth('unhealthy', 'boom');
+      }
+
+      return new EventHealth('healthy', 'ok');
+    });
+
+    services.AddSingleton(counterToken, CounterService);
+    services.AddTransient(
+      handlerToken,
+      (provider) => new InjectedHandler(provider.Resolve(counterToken)),
+    );
+
+    const provider = new ServiceProvider(services);
+    const dispatcher = new EventDispatcher(
+      provider,
+      new HandlerResolver(provider, () => handlerToken),
+      undefined,
+      undefined,
+      metrics,
+      [],
+      tracer,
+      healthCheck,
+    );
+
+    const event = new UserCreatedEvent({ userId: '42' }, { correlationId: 'corr-1' });
+    await dispatcher.dispatch(event);
+
+    const activities = tracer.getActivities(event.eventId);
+    const snapshot = tracer.snapshot();
+
+    expect(activities.length).toBeGreaterThan(0);
+    expect(snapshot.activities).toHaveLength(activities.length);
+    expect(snapshot.activities[0]?.correlationId).toBe('corr-1');
+    expect(snapshot.health.status).toBe('healthy');
   });
 });

@@ -847,12 +847,221 @@ export class EventPipelineBuilder<TEvent extends IEvent = IEvent> {
   }
 }
 
+export interface IEventObserver {
+  onEventObserved(snapshot: EventPerformanceSnapshot): Promise<void> | void;
+}
+
+export class EventCounters {
+  public publishedEvents = 0;
+  public successfulDispatches = 0;
+  public failedDispatches = 0;
+  public retryAttempts = 0;
+  public deadLetteredEvents = 0;
+  public failedObservers = 0;
+  public middlewareExecutions = 0;
+  public handlerExecutions = 0;
+  public concurrentExecutions = 0;
+  public activeExecutions = 0;
+}
+
+export class EventMetrics {
+  private readonly counters = new EventCounters();
+  private readonly latenciesMs: number[] = [];
+  private readonly handlerLatenciesMs: number[] = [];
+  private readonly middlewareLatenciesMs: number[] = [];
+  private readonly throughputSamples: number[] = [];
+
+  public recordPublishedEvent(): void {
+    this.counters.publishedEvents += 1;
+  }
+
+  public recordDispatchResult(success: boolean): void {
+    if (success) {
+      this.counters.successfulDispatches += 1;
+    } else {
+      this.counters.failedDispatches += 1;
+    }
+  }
+
+  public recordRetryAttempt(): void {
+    this.counters.retryAttempts += 1;
+  }
+
+  public recordDeadLetter(): void {
+    this.counters.deadLetteredEvents += 1;
+  }
+
+  public recordObserverFailure(): void {
+    this.counters.failedObservers += 1;
+  }
+
+  public recordMiddlewareExecution(durationMs: number): void {
+    this.counters.middlewareExecutions += 1;
+    this.middlewareLatenciesMs.push(durationMs);
+  }
+
+  public recordHandlerExecution(durationMs: number): void {
+    this.counters.handlerExecutions += 1;
+    this.handlerLatenciesMs.push(durationMs);
+  }
+
+  public recordLatency(durationMs: number): void {
+    this.latenciesMs.push(durationMs);
+  }
+
+  public recordConcurrentExecution(): void {
+    this.counters.concurrentExecutions += 1;
+    this.counters.activeExecutions += 1;
+  }
+
+  public completeConcurrentExecution(): void {
+    if (this.counters.activeExecutions > 0) {
+      this.counters.activeExecutions -= 1;
+    }
+  }
+
+  public recordThroughput(): void {
+    this.throughputSamples.push(Date.now());
+  }
+
+  public snapshot(): EventPerformanceSnapshot {
+    return new EventPerformanceSnapshot(
+      { ...this.counters },
+      new EventStatistics(
+        this.average(this.latenciesMs),
+        this.minimum(this.latenciesMs),
+        this.maximum(this.latenciesMs),
+        this.average(this.handlerLatenciesMs),
+        this.minimum(this.handlerLatenciesMs),
+        this.maximum(this.handlerLatenciesMs),
+        this.average(this.middlewareLatenciesMs),
+        this.minimum(this.middlewareLatenciesMs),
+        this.maximum(this.middlewareLatenciesMs),
+        this.throughputSamples.length,
+      ),
+    );
+  }
+
+  private average(values: readonly number[]): number {
+    if (values.length === 0) {
+      return 0;
+    }
+
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
+  private minimum(values: readonly number[]): number {
+    return values.length === 0 ? 0 : Math.min(...values);
+  }
+
+  private maximum(values: readonly number[]): number {
+    return values.length === 0 ? 0 : Math.max(...values);
+  }
+}
+
+export class EventStatistics {
+  public constructor(
+    public readonly averageLatencyMs: number,
+    public readonly minimumLatencyMs: number,
+    public readonly maximumLatencyMs: number,
+    public readonly averageHandlerLatencyMs: number,
+    public readonly minimumHandlerLatencyMs: number,
+    public readonly maximumHandlerLatencyMs: number,
+    public readonly averageMiddlewareLatencyMs: number,
+    public readonly minimumMiddlewareLatencyMs: number,
+    public readonly maximumMiddlewareLatencyMs: number,
+    public readonly throughputPerSecond: number,
+  ) {}
+}
+
+export class EventTracer {
+  private readonly activities: EventActivity[] = [];
+  private health: EventHealth | undefined;
+
+  public record(event: IEvent, correlationId: string | undefined, phase: string): void {
+    this.activities.push(
+      new EventActivity(event.eventId, correlationId, phase, new Date().toISOString()),
+    );
+  }
+
+  public recordHealth(health: EventHealth | undefined): void {
+    this.health = health;
+  }
+
+  public getActivities(eventId: string): readonly EventActivity[] {
+    return this.activities.filter((activity) => activity.eventId === eventId);
+  }
+
+  public snapshot(): EventTraceSnapshot {
+    return new EventTraceSnapshot([...this.activities], this.health);
+  }
+}
+
+export class EventActivity {
+  public constructor(
+    public readonly eventId: string,
+    public readonly correlationId: string | undefined,
+    public readonly phase: string,
+    public readonly timestamp: string,
+  ) {}
+}
+
+export class EventHealth {
+  public constructor(
+    public readonly status: 'healthy' | 'degraded' | 'unhealthy',
+    public readonly message: string,
+  ) {}
+}
+
+export class EventHealthCheck {
+  public constructor(
+    private readonly evaluator: (snapshot: EventPerformanceSnapshot) => EventHealth,
+  ) {}
+
+  public evaluate(snapshot: EventPerformanceSnapshot): EventHealth {
+    return this.evaluator(snapshot);
+  }
+}
+
+export class EventPerformanceSnapshot {
+  public readonly metrics: EventPerformanceSnapshot;
+
+  public constructor(
+    public readonly counters: EventCounters,
+    public readonly statistics: EventStatistics,
+    public readonly health?: EventHealth,
+    public readonly activities: readonly EventActivity[] = [],
+    public readonly observedAt: string = new Date().toISOString(),
+  ) {
+    this.metrics = this;
+  }
+}
+
+export class EventTraceSnapshot {
+  public constructor(
+    public readonly activities: readonly EventActivity[],
+    public readonly health?: EventHealth,
+  ) {}
+}
+
+export class EventObserver implements IEventObserver {
+  public constructor(private readonly observer: IEventObserver) {}
+
+  public async onEventObserved(snapshot: EventPerformanceSnapshot): Promise<void> {
+    await this.observer.onEventObserved(snapshot);
+  }
+}
+
 export class EventDispatcher {
   public constructor(
     private readonly provider: IServiceProvider,
     private readonly handlerResolver: HandlerResolver,
     private readonly pipeline: EventPipeline<IEvent> = new EventPipeline([]),
     private readonly retryExecutor: RetryExecutor | undefined = undefined,
+    private readonly metrics: EventMetrics | undefined = undefined,
+    private readonly observers: readonly IEventObserver[] = [],
+    private readonly tracer: EventTracer | undefined = undefined,
+    private readonly healthCheck: EventHealthCheck | undefined = undefined,
   ) {}
 
   public async dispatch<TEvent extends IEvent>(
@@ -863,6 +1072,8 @@ export class EventDispatcher {
 
     const startedAt = new Date().toISOString();
     const statistics = new DispatchStatistics(startedAt);
+    this.metrics?.recordConcurrentExecution();
+    this.tracer?.record(event, event.correlationId, 'dispatch-started');
     const dispatchContext = new EventDispatchContext(
       event,
       options.signal,
@@ -873,6 +1084,8 @@ export class EventDispatcher {
     );
 
     if (dispatchContext.signal?.aborted) {
+      this.metrics?.recordDispatchResult(false);
+      this.tracer?.record(event, event.correlationId, 'dispatch-cancelled');
       statistics.cancelled = true;
       statistics.completedAt = new Date().toISOString();
       statistics.durationMs = 0;
@@ -906,6 +1119,7 @@ export class EventDispatcher {
           );
 
           try {
+            const handlerStartedAt = Date.now();
             const executionResult = this.retryExecutor
               ? await this.retryExecutor.execute({
                   event,
@@ -915,8 +1129,14 @@ export class EventDispatcher {
                   deadLetterQueue: options.deadLetterQueue,
                 })
               : await this.executeOnce(event, handler);
+            const handlerDurationMs = Date.now() - handlerStartedAt;
+            this.metrics?.recordHandlerExecution(handlerDurationMs);
+            this.tracer?.record(event, event.correlationId, 'handler-executed');
 
-            statistics.retryAttempts += Math.max(0, executionResult.attempts - 1);
+            if (executionResult.attempts > 1) {
+              statistics.retryAttempts += executionResult.attempts - 1;
+              this.metrics?.recordRetryAttempt();
+            }
 
             if (executionResult.succeeded) {
               statistics.executedHandlers += 1;
@@ -935,6 +1155,7 @@ export class EventDispatcher {
               statistics.failedHandlers += 1;
               if (executionResult.outcome === 'dead-lettered') {
                 statistics.deadLetteredEvents += 1;
+                this.metrics?.recordDeadLetter();
               }
               errors.push(executionResult.error ?? new EventBusError('Handler execution failed.'));
               executionContexts.push(
@@ -979,6 +1200,32 @@ export class EventDispatcher {
 
     statistics.completedAt = new Date().toISOString();
     statistics.durationMs = Date.now() - new Date(startedAt).getTime();
+    this.metrics?.recordLatency(statistics.durationMs);
+    this.metrics?.recordDispatchResult(errors.length === 0 && statistics.missingHandlers === 0);
+    this.metrics?.completeConcurrentExecution();
+    this.tracer?.record(event, event.correlationId, 'dispatch-completed');
+    if (this.tracer && this.healthCheck) {
+      const metricsSnapshot = this.metrics?.snapshot();
+      const baseSnapshot =
+        metricsSnapshot ??
+        new EventPerformanceSnapshot(
+          new EventCounters(),
+          new EventStatistics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        );
+      this.tracer.recordHealth(this.healthCheck.evaluate(baseSnapshot));
+    }
+    const snapshots = await Promise.allSettled(
+      this.observers.map(async (observer) => {
+        const snapshot = this.createSnapshot(event, statistics, errors, executionContexts);
+        await observer.onEventObserved(snapshot);
+      }),
+    );
+
+    snapshots.forEach((snapshot) => {
+      if (snapshot.status === 'rejected') {
+        this.metrics?.recordObserverFailure();
+      }
+    });
 
     return new DispatchResult(
       event,
@@ -987,6 +1234,33 @@ export class EventDispatcher {
       errors,
       executionContexts,
       statistics.completedAt,
+    );
+  }
+
+  private createSnapshot<TEvent extends IEvent>(
+    _event: TEvent,
+    _statistics: DispatchStatistics,
+    _errors: readonly Error[],
+    _executionContexts: readonly EventExecutionContext<TEvent>[],
+  ): EventPerformanceSnapshot {
+    const metricsSnapshot = this.metrics?.snapshot();
+    const activities = this.tracer?.snapshot().activities ?? [];
+    const baseSnapshot =
+      metricsSnapshot ??
+      new EventPerformanceSnapshot(
+        new EventCounters(),
+        new EventStatistics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+      );
+    const health = this.healthCheck?.evaluate(baseSnapshot) ?? new EventHealth('healthy', 'ok');
+
+    this.tracer?.recordHealth(health);
+
+    return new EventPerformanceSnapshot(
+      metricsSnapshot?.counters ?? new EventCounters(),
+      metricsSnapshot?.statistics ?? new EventStatistics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+      health,
+      activities,
+      new Date().toISOString(),
     );
   }
 
