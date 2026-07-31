@@ -14,6 +14,7 @@ export * from './registry.js';
 export * from './retry.js';
 export * from './runtime-engine.js';
 export * from './runtime-foundation.js';
+export * from './runtime-scheduler.js';
 
 import type { Context } from '@infrashield/context';
 import type { Agent } from '@infrashield/agent-core';

@@ -137,6 +137,45 @@ console.log(metrics.snapshot());
 
 The runtime host is the bootstrapper for the execution engine. It owns the runtime lifecycle, validates immutable configuration, manages a service scope, publishes lifecycle events through the public event bus contract, and notifies observers about state transitions.
 
+## Scheduler and Queue Architecture
+
+The runtime package also exposes a generic in-process scheduler and work queue that can be composed by higher layers without introducing persistence, cron, or distributed coordination. The scheduler provides a priority-aware FIFO queue, configurable backpressure, lease tracking, health reporting, and worker dispatch semantics.
+
+```ts
+import { RuntimeSchedulerBuilder } from '@infrashield/runtime';
+
+const scheduler = new RuntimeSchedulerBuilder()
+  .withWorkers(2)
+  .withQueueCapacity(10)
+  .withBackpressurePolicy('reject')
+  .withHandler(async (execution) => {
+    console.log('processing', execution.id);
+  })
+  .build();
+
+await scheduler.start();
+await scheduler.enqueue(
+  new RuntimeExecution({
+    id: 'exec-2',
+    owner: { id: 'agent-2', type: 'agent' },
+    correlationId: 'corr-2',
+  }),
+);
+await scheduler.shutdown({ drain: true });
+```
+
+### Scheduler capabilities
+
+- priority-aware dispatch while preserving FIFO ordering within the same priority
+- configurable queue capacity and backpressure policies
+- graceful drain support during shutdown
+- lease-based execution tracking for observability and timeout scenarios
+- queue health and statistics snapshots for monitoring and diagnostics
+
+## Public API
+
+The package exports the core foundation types and implementations through the package entrypoint, including Runtime, RuntimeHost, RuntimeHostBuilder, RuntimeHostConfiguration, RuntimeHostContext, RuntimeHostDiagnostics, RuntimeHostServiceScope, RuntimeExecution, RuntimeContext, RuntimePipeline, RuntimeCancellation, RuntimeMetrics, RuntimeScheduler, RuntimeSchedulerBuilder, RuntimeQueue, RuntimeWorkerPool, and the lifecycle and exception types.
+
 ### RuntimeHostBuilder
 
 Use the builder for fluent setup:
