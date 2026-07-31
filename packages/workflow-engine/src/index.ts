@@ -1,1 +1,21 @@
 export * from './workflow-foundation.js';
+export {
+  WorkflowAnnotation,
+  WorkflowCategory,
+  WorkflowDefinition,
+  WorkflowDefinitionBuilder,
+  WorkflowDefinitionMetadata,
+  WorkflowDefinitionOptions,
+  WorkflowDefinitionSnapshot,
+  WorkflowDefinitionStatistics,
+  WorkflowDefinitionVersion,
+  WorkflowDescription,
+  WorkflowLabel,
+  WorkflowOwner,
+  WorkflowTagCollection,
+  type IWorkflowDefinitionBuilder,
+  type IWorkflowMetadata,
+  type IWorkflowSnapshot,
+  type IWorkflowStatistics,
+  type IWorkflowVersion,
+} from './workflow-definition-model.js';

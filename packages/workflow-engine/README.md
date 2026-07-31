@@ -10,8 +10,12 @@ The workflow engine package provides the foundational workflow abstractions for 
 
 ## Core model
 
-- WorkflowDefinition: immutable workflow contract with identifier, version, metadata, owner, correlation identifier, tags, and optional description.
-- WorkflowBuilder: fluent builder for constructing validated definitions.
+- WorkflowDefinition: immutable workflow contract with identifier, version, metadata, owner, labels, annotations, options, statistics, snapshots, and deterministic hashing.
+- WorkflowDefinitionBuilder: fluent builder for constructing validated definitions with semantic versioning, metadata, tags, labels, annotations, and options.
+- WorkflowDefinitionMetadata: immutable metadata container with string-safe normalization and lookup helpers.
+- WorkflowDefinitionVersion: semantic version value object with major/minor/patch parsing, comparison, and latest-version helpers.
+- WorkflowDefinitionSnapshot: immutable snapshot with serialization, diagnostics, and hash generation.
+- WorkflowDefinitionStatistics: immutable statistics container for size, metadata count, tag count, annotation count, and timestamps.
 - WorkflowExecution: execution lifecycle with created, validated, ready, running, completed, cancelled, failed, and timed out states.
 - WorkflowExecutionContext: immutable execution context carrying workflow metadata and optional request context.
 - WorkflowExecutionSnapshot: immutable snapshot of execution state and history.
@@ -24,26 +28,43 @@ The workflow validator enforces the required contract:
 - missing workflow identifier
 - missing workflow name
 - missing workflow owner
-- missing correlation identifier
 - missing version
 - missing metadata
 - missing tags
+- invalid semantic versions
+- reserved names and invalid metadata values
 
-## Usage
+## Builder API
 
 ```ts
-import { WorkflowBuilder, WorkflowEngine } from '@infrashield/workflow-engine';
+import {
+  WorkflowAnnotation,
+  WorkflowDefinitionBuilder,
+  WorkflowDefinitionMetadata,
+  WorkflowDefinitionOptions,
+} from '@infrashield/workflow-engine';
 
-const definition = new WorkflowBuilder()
+const definition = new WorkflowDefinitionBuilder()
   .withId('workflow-1')
-  .withName('Demo workflow')
+  .withName('Customer Onboarding')
+  .withVersion('2.3.1')
+  .withDescription('Handles onboarding')
   .withOwner('ops')
-  .withCorrelationId('corr-1')
-  .withVersion('1.0.0')
-  .withMetadata({ source: 'docs' })
-  .withTags(['demo'])
+  .withCategory('customer-journey')
+  .withTags(['core', 'onboarding'])
+  .withLabels(['production', 'critical'])
+  .withAnnotations([new WorkflowAnnotation('source', 'internal')])
+  .withMetadata(new WorkflowDefinitionMetadata({ tenant: 'acme', author: 'alice' }))
+  .withOptions(new WorkflowDefinitionOptions({ timeoutMs: 5000, retryCount: 2 }))
   .build();
+```
 
-const engine = new WorkflowEngine();
-const result = await engine.execute(definition);
+## Snapshots and statistics
+
+```ts
+const snapshot = definition.snapshot();
+const statistics = definition.statistics;
+
+snapshot.toJSON();
+snapshot.diagnostics();
 ```

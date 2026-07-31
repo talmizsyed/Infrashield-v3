@@ -130,6 +130,27 @@ export class WorkflowException extends Error {
   }
 }
 
+export class WorkflowDefinitionException extends WorkflowException {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'WorkflowDefinitionException';
+  }
+}
+
+export class WorkflowBuilderException extends WorkflowException {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'WorkflowBuilderException';
+  }
+}
+
+export class WorkflowMetadataException extends WorkflowException {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'WorkflowMetadataException';
+  }
+}
+
 export class WorkflowValidationException extends WorkflowException {
   public constructor(message: string) {
     super(message);
