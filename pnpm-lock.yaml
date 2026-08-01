@@ -204,6 +204,15 @@ importers:
 
   providers/provider-openai: {}
 
+  providers/provider-vmware:
+    dependencies:
+      '@infrashield/context':
+        specifier: workspace:*
+        version: link:../../packages/context
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
 packages:
   '@emnapi/core@1.11.1':
     resolution:
