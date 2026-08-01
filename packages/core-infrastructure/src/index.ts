@@ -34,3 +34,4 @@ export * from './options';
 export * from './primitives';
 export * from './result';
 export * from './serializer';
+export * from './providers';
