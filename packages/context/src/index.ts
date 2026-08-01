@@ -5,6 +5,7 @@ import type {
 } from '@infrashield/contracts';
 
 export * from './knowledge';
+export * from './retrieval';
 
 /**
  * Execution trace context used for distributed correlation.
