@@ -1016,3 +1016,4 @@ export class AgentSnapshot {
 }
 
 export { AgentConfiguration as AgentConfig };
+export * from './tool-framework';
