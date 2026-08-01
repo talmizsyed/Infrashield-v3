@@ -1,0 +1,16 @@
+{
+  "name": "@infrashield/provider-kubernetes",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@infrashield/context": "workspace:*",
+    "@infrashield/contracts": "workspace:*"
+  }
+}
