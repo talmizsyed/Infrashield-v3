@@ -22,6 +22,10 @@ The abstractions support:
 
 The planning module introduces provider-agnostic abstractions for goals, plans, task graphs, dependency graphs, checkpoints, recovery, and progress tracking. It is designed for long-running autonomous work without embedding any infrastructure-specific logic.
 
+## Reflection framework
+
+The reflection module introduces deterministic abstractions for evaluating execution outcomes, scoring confidence, recording evidence, generating recommendations, and producing immutable reports. It is intentionally artifact-driven so future memory and knowledge services can consume the outputs without depending on providers or infrastructure services.
+
 ### Goal model
 
 - Goals encapsulate a target objective, lifecycle state, policy, and execution context.
