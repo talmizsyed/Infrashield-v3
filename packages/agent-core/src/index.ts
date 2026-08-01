@@ -1021,3 +1021,4 @@ export * from './collaboration';
 export * from './planning';
 export * from './reflection';
 export * from './governance';
+export * from './cognitive';
