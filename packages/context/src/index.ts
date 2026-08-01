@@ -6,6 +6,7 @@ import type {
 
 export * from './knowledge';
 export * from './retrieval';
+export * from './infrastructure';
 
 /**
  * Execution trace context used for distributed correlation.
