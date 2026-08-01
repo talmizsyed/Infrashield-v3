@@ -1,6 +1,6 @@
 # Agent Core
 
-The agent-core package provides the reusable enterprise abstractions for agent execution context, memory, and lifecycle orchestration.
+The agent-core package provides the reusable enterprise abstractions for agent execution context, memory, lifecycle orchestration, and planning.
 
 ## Architecture
 
@@ -17,6 +17,22 @@ The abstractions support:
 - Conversation memory: messages, turns, summaries, system instructions, user instructions.
 - Knowledge memory: knowledge references, retrieved documents, evidence, confidence.
 - Execution and environment context: workflow, runtime, session, model, provider, execution id, correlation id, tenant, environment, and security context.
+
+## Planning framework
+
+The planning module introduces provider-agnostic abstractions for goals, plans, task graphs, dependency graphs, checkpoints, recovery, and progress tracking. It is designed for long-running autonomous work without embedding any infrastructure-specific logic.
+
+### Goal model
+
+- Goals encapsulate a target objective, lifecycle state, policy, and execution context.
+- Goal snapshots capture progress, blocked tasks, and milestones for observability.
+- Goal registries and schedulers expose reusable coordination primitives.
+
+### Planning model
+
+- Plans are immutable once published, while builders remain mutable during planning.
+- Task graphs and dependency graphs support hierarchical decomposition and ordering.
+- Checkpoints, recovery, and replay primitives support resilience for long-running execution.
 
 ## Snapshots
 
