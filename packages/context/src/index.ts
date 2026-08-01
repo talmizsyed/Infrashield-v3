@@ -4,6 +4,8 @@ import type {
   SerializableValueObject,
 } from '@infrashield/contracts';
 
+export * from './knowledge';
+
 /**
  * Execution trace context used for distributed correlation.
  */
