@@ -1020,3 +1020,4 @@ export * from './tool-framework';
 export * from './collaboration';
 export * from './planning';
 export * from './reflection';
+export * from './governance';
