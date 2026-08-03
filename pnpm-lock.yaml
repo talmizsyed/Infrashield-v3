@@ -200,6 +200,15 @@ importers:
 
   providers/provider-kimi: {}
 
+  providers/provider-kubernetes:
+    dependencies:
+      '@infrashield/context':
+        specifier: workspace:*
+        version: link:../../packages/context
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
   providers/provider-ollama: {}
 
   providers/provider-openai: {}
