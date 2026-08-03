@@ -661,41 +661,43 @@ export class ApprovalEngine implements IApprovalEngine {
   public constructor(private readonly manager: ApprovalManager = new ApprovalManager()) {}
 
   public async submit(request: ApprovalRequest): Promise<ApprovalResponse> {
-    this.manager.register(request);
+    const normalizedRequest = this.normalizeRequest(request);
+    this.manager.register(normalizedRequest);
 
-    const policy = request.policy ?? new ApprovalPolicy();
+    const policy = normalizedRequest.policy ?? new ApprovalPolicy();
     const workflow =
-      request.workflow ?? new ApprovalWorkflow({ id: 'workflow-default', name: 'default' });
+      normalizedRequest.workflow ??
+      new ApprovalWorkflow({ id: 'workflow-default', name: 'default' });
     const risk =
-      request.riskAssessment ??
+      normalizedRequest.riskAssessment ??
       new ApprovalRiskAssessment({ level: ApprovalRiskLevel.Medium, score: 25, threshold: 50 });
 
-    const decisionType = this.evaluateDecision(request, policy, workflow, risk);
+    const decisionType = this.evaluateDecision(normalizedRequest, policy, workflow, risk);
     const decision = new ApprovalDecision({
       decision: decisionType,
-      actorId: request.requestorId,
+      actorId: normalizedRequest.requestorId,
       reason: 'evaluated',
     });
 
     const status = this.toStatus(decisionType);
     const checkpoint = new ApprovalCheckpoint({
-      checkpointId: `${request.id}-checkpoint`,
-      requestId: request.id,
+      checkpointId: `${normalizedRequest.id}-checkpoint`,
+      requestId: normalizedRequest.id,
       status,
     });
     const snapshot = new ApprovalSnapshot({
-      snapshotId: `${request.id}-snapshot`,
-      requestId: request.id,
+      snapshotId: `${normalizedRequest.id}-snapshot`,
+      requestId: normalizedRequest.id,
       status,
       decision,
     });
     const notification = new ApprovalNotification({
-      id: `${request.id}-notification`,
-      recipientId: request.requestorId,
-      message: `Approval ${decisionType} for ${request.id}`,
+      id: `${normalizedRequest.id}-notification`,
+      recipientId: normalizedRequest.requestorId,
+      message: `Approval ${decisionType} for ${normalizedRequest.id}`,
     });
     const response = new ApprovalResponse({
-      requestId: request.id,
+      requestId: normalizedRequest.id,
       status,
       decision,
       notifications: [notification],
@@ -703,35 +705,37 @@ export class ApprovalEngine implements IApprovalEngine {
       snapshot,
     });
 
-    this.manager.resolve(request.id, response);
+    this.manager.resolve(normalizedRequest.id, response);
     return response;
   }
 
   public evaluate(request: ApprovalRequest): ApprovalResponse {
-    const policy = request.policy ?? new ApprovalPolicy();
+    const normalizedRequest = this.normalizeRequest(request);
+    const policy = normalizedRequest.policy ?? new ApprovalPolicy();
     const workflow =
-      request.workflow ?? new ApprovalWorkflow({ id: 'workflow-default', name: 'default' });
+      normalizedRequest.workflow ??
+      new ApprovalWorkflow({ id: 'workflow-default', name: 'default' });
     const risk =
-      request.riskAssessment ??
+      normalizedRequest.riskAssessment ??
       new ApprovalRiskAssessment({ level: ApprovalRiskLevel.Medium, score: 25, threshold: 50 });
-    const decisionType = this.evaluateDecision(request, policy, workflow, risk);
+    const decisionType = this.evaluateDecision(normalizedRequest, policy, workflow, risk);
     const decision = new ApprovalDecision({
       decision: decisionType,
-      actorId: request.requestorId,
+      actorId: normalizedRequest.requestorId,
       reason: 'evaluated',
     });
     return new ApprovalResponse({
-      requestId: request.id,
+      requestId: normalizedRequest.id,
       status: this.toStatus(decisionType),
       decision,
       checkpoint: new ApprovalCheckpoint({
-        checkpointId: `${request.id}-checkpoint`,
-        requestId: request.id,
+        checkpointId: `${normalizedRequest.id}-checkpoint`,
+        requestId: normalizedRequest.id,
         status: this.toStatus(decisionType),
       }),
       snapshot: new ApprovalSnapshot({
-        snapshotId: `${request.id}-snapshot`,
-        requestId: request.id,
+        snapshotId: `${normalizedRequest.id}-snapshot`,
+        requestId: normalizedRequest.id,
         status: this.toStatus(decisionType),
         decision,
       }),
@@ -740,6 +744,43 @@ export class ApprovalEngine implements IApprovalEngine {
 
   public getManager(): ApprovalManager {
     return this.manager;
+  }
+
+  private normalizeRequest(request: ApprovalRequest): ApprovalRequest {
+    if (request instanceof ApprovalRequest) {
+      return request;
+    }
+
+    const requestId = (request as ApprovalRequest & { requestId?: Identifier }).requestId;
+    if (!requestId) {
+      return request;
+    }
+
+    return new ApprovalRequest({
+      id: requestId,
+      title: (request as ApprovalRequest & { title?: string }).title ?? 'Approval request',
+      operation: (request as ApprovalRequest & { operation?: string }).operation ?? 'evaluate',
+      requestorId: (request as ApprovalRequest & { requestorId?: string }).requestorId ?? 'system',
+      approvers: (request as ApprovalRequest & { approvers?: readonly string[] }).approvers ?? [],
+      policy: (request as ApprovalRequest & { policy?: ApprovalPolicy }).policy,
+      workflow: (request as ApprovalRequest & { workflow?: ApprovalWorkflow }).workflow,
+      riskAssessment: (request as ApprovalRequest & { riskAssessment?: ApprovalRiskAssessment })
+        .riskAssessment,
+      metadata: {
+        ...((request as ApprovalRequest & { metadata?: Readonly<Record<string, unknown>> })
+          .metadata ?? {}),
+        ...((request as ApprovalRequest & { correlationId?: CorrelationId }).correlationId !==
+        undefined
+          ? {
+              correlationId: (request as ApprovalRequest & { correlationId?: CorrelationId })
+                .correlationId,
+            }
+          : {}),
+        ...((request as ApprovalRequest & { tenantId?: string }).tenantId !== undefined
+          ? { tenantId: (request as ApprovalRequest & { tenantId?: string }).tenantId }
+          : {}),
+      },
+    });
   }
 
   private evaluateDecision(
