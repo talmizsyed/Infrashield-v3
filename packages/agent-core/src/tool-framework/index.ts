@@ -94,6 +94,13 @@ export interface IToolPolicy {
   readonly timeoutMs: number;
 }
 
+export interface IToolHost {
+  register(tool: ToolDefinition): void;
+  get(toolId: Identifier): ToolDefinition | undefined;
+  list(): readonly ToolDefinition[];
+  execute(request: ToolExecutionRequest): Promise<ToolExecutionResult>;
+}
+
 export class ToolException extends Error {
   public constructor(
     message: string,
@@ -237,7 +244,7 @@ export class ToolStatistics {
   public constructor(public readonly metrics: ToolMetrics = new ToolMetrics()) {}
 }
 
-export class ToolAudit {
+export class ToolAuditLog {
   public constructor(public readonly entries: readonly string[] = []) {}
 }
 
@@ -588,6 +595,451 @@ export class ToolPolicy implements IToolPolicy {
   public readonly maxRetries: number;
   public readonly timeoutMs: number;
 }
+
+export class ToolCapabilities {
+  public constructor(options: { readonly capabilities?: readonly ToolCapability[] } = {}) {
+    this.values = Object.freeze([...(options.capabilities ?? [])]);
+  }
+
+  public readonly values: readonly ToolCapability[];
+
+  public supports(name: string): boolean {
+    return this.values.some((capability) => capability.name === name);
+  }
+
+  public list(): readonly ToolCapability[] {
+    return [...this.values];
+  }
+}
+
+export class ToolSchema {
+  public constructor(
+    options: {
+      readonly name?: string;
+      readonly inputSchema?: SerializableValueObject;
+      readonly outputSchema?: SerializableValueObject;
+      readonly version?: string;
+    } = {},
+  ) {
+    this.name = options.name ?? 'default-schema';
+    this.inputSchema = options.inputSchema ? Object.freeze({ ...options.inputSchema }) : undefined;
+    this.outputSchema = options.outputSchema
+      ? Object.freeze({ ...options.outputSchema })
+      : undefined;
+    this.version = options.version ?? '1.0.0';
+  }
+
+  public readonly name: string;
+  public readonly inputSchema?: Readonly<SerializableValueObject>;
+  public readonly outputSchema?: Readonly<SerializableValueObject>;
+  public readonly version: string;
+
+  public validateInput(input: SerializableValue): Result<void> {
+    if (!this.inputSchema) {
+      return { succeeded: true, data: undefined };
+    }
+
+    const schema = this.inputSchema as SerializableValueObject & {
+      readonly required?: readonly string[];
+      readonly properties?: Record<string, SerializableValueObject>;
+    };
+    const required = schema.required ?? [];
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      if (required.length > 0) {
+        throw new ToolValidationException('Input must be an object for the declared schema');
+      }
+      return { succeeded: true, data: undefined };
+    }
+
+    const value = input as Record<string, SerializableValue>;
+    for (const key of required) {
+      if (!(key in value)) {
+        throw new ToolValidationException(`Missing required field: ${key}`);
+      }
+    }
+
+    return { succeeded: true, data: undefined };
+  }
+
+  public validateOutput(output: SerializableValue): Result<void> {
+    if (!this.outputSchema) {
+      return { succeeded: true, data: undefined };
+    }
+
+    if (typeof output !== 'object' || output === null || Array.isArray(output)) {
+      throw new ToolValidationException('Output must be an object for the declared schema');
+    }
+
+    return { succeeded: true, data: undefined };
+  }
+}
+
+export class ToolTimeout {
+  public constructor(
+    options: { readonly timeoutMs: number; readonly mode?: 'hard' | 'soft' } = { timeoutMs: 1000 },
+  ) {
+    if (options.timeoutMs <= 0) {
+      throw new ToolException('Tool timeout must be positive');
+    }
+    this.timeoutMs = options.timeoutMs;
+    this.mode = options.mode ?? 'hard';
+  }
+
+  public readonly timeoutMs: number;
+  public readonly mode: 'hard' | 'soft';
+
+  public async race<T>(operation: () => Promise<T>): Promise<T> {
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      const timer = setTimeout(
+        () => reject(new ToolExecutionException(`Timed out after ${this.timeoutMs}ms`)),
+        this.timeoutMs,
+      );
+      void timer;
+    });
+
+    return Promise.race([operation(), timeoutPromise]);
+  }
+}
+
+export class ToolRetryPolicy {
+  public constructor(
+    options: {
+      readonly maxRetries?: number;
+      readonly baseDelayMs?: number;
+      readonly backoffMultiplier?: number;
+      readonly retryableErrors?: readonly string[];
+    } = {},
+  ) {
+    this.maxRetries = options.maxRetries ?? 0;
+    this.baseDelayMs = options.baseDelayMs ?? 50;
+    this.backoffMultiplier = options.backoffMultiplier ?? 2;
+    this.retryableErrors = Object.freeze([...(options.retryableErrors ?? [])]);
+  }
+
+  public readonly maxRetries: number;
+  public readonly baseDelayMs: number;
+  public readonly backoffMultiplier: number;
+  public readonly retryableErrors: readonly string[];
+
+  public shouldRetry(attempt: number, error?: Error): boolean {
+    if (attempt >= this.maxRetries) {
+      return false;
+    }
+    if (!error) {
+      return true;
+    }
+    if (this.retryableErrors.length === 0) {
+      return true;
+    }
+    return this.retryableErrors.some((name) => error.name === name || error.message.includes(name));
+  }
+
+  public delayFor(attempt: number): number {
+    return this.baseDelayMs * this.backoffMultiplier ** attempt;
+  }
+}
+
+export class ToolCircuitBreaker {
+  private failures = 0;
+  private openedAt: number | undefined;
+
+  public constructor(
+    options: { readonly failureThreshold?: number; readonly cooldownMs?: number } = {},
+  ) {
+    this.failureThreshold = options.failureThreshold ?? 3;
+    this.cooldownMs = options.cooldownMs ?? 1000;
+  }
+
+  public readonly failureThreshold: number;
+  public readonly cooldownMs: number;
+  public state: 'closed' | 'open' | 'half-open' = 'closed';
+
+  public allowRequest(): boolean {
+    if (this.state !== 'open') {
+      return true;
+    }
+    if (this.openedAt && Date.now() - this.openedAt >= this.cooldownMs) {
+      this.state = 'half-open';
+      return true;
+    }
+    return false;
+  }
+
+  public recordSuccess(): void {
+    this.failures = 0;
+    this.openedAt = undefined;
+    this.state = 'closed';
+  }
+
+  public recordFailure(): void {
+    this.failures += 1;
+    if (this.failures >= this.failureThreshold) {
+      this.openedAt = Date.now();
+      this.state = 'open';
+    }
+  }
+}
+
+export class ToolExecutionRecord {
+  public constructor(
+    public readonly request: ToolExecutionRequest,
+    public readonly result: ToolExecutionResult,
+    public readonly attempt: number,
+    public readonly timestamp: TimestampString = new Date().toISOString(),
+  ) {}
+}
+
+export class ToolExecutionHistory {
+  private readonly records: ToolExecutionRecord[] = [];
+
+  public record(record: ToolExecutionRecord): void {
+    this.records.push(record);
+  }
+
+  public list(): readonly ToolExecutionRecord[] {
+    return [...this.records];
+  }
+}
+
+export class ToolAuditEntry {
+  public constructor(
+    public readonly action: string,
+    public readonly message: string,
+    public readonly timestamp: TimestampString = new Date().toISOString(),
+  ) {}
+}
+
+export class ToolAudit {
+  private readonly entries: ToolAuditEntry[] = [];
+
+  public record(entry: ToolAuditEntry): void {
+    this.entries.push(entry);
+  }
+
+  public list(): readonly ToolAuditEntry[] {
+    return [...this.entries];
+  }
+}
+
+export class ToolResult extends ToolExecutionResult {
+  public constructor(
+    options: {
+      readonly toolId?: Identifier;
+      readonly status?: ToolExecutionStatus;
+      readonly output?: SerializableValue;
+      readonly error?: string;
+      readonly startedAt?: TimestampString;
+      readonly completedAt?: TimestampString;
+      readonly metadata?: SerializableValueObject;
+      readonly attempts?: number;
+      readonly durationMs?: number;
+    } = {},
+  ) {
+    super(options);
+    this.attempts = options.attempts ?? 1;
+    this.durationMs = options.durationMs ?? 0;
+  }
+
+  public readonly attempts: number;
+  public readonly durationMs: number;
+}
+
+export class ToolExecutor {
+  public constructor(
+    private readonly definition: ToolDefinition,
+    private readonly handler: (input: SerializableValue | undefined) => Promise<SerializableValue>,
+    private readonly options: {
+      readonly authorization?: IToolAuthorization;
+      readonly validator?: IToolValidator;
+      readonly policy?: ToolPolicy;
+      readonly timeout?: ToolTimeout;
+      readonly retryPolicy?: ToolRetryPolicy;
+      readonly circuitBreaker?: ToolCircuitBreaker;
+      readonly history?: ToolExecutionHistory;
+      readonly audit?: ToolAudit;
+    } = {},
+  ) {}
+
+  public async execute(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
+    const validator = request.context?.validator ?? this.options.validator ?? new ToolValidation();
+    const authorization = request.context?.authorization ?? this.options.authorization;
+    const policy =
+      request.context?.policy ??
+      this.options.policy ??
+      new ToolPolicy({ name: 'default-policy', maxRetries: 0, timeoutMs: 1000 });
+    const timeout = this.options.timeout ?? new ToolTimeout({ timeoutMs: policy.timeoutMs });
+    const retryPolicy =
+      this.options.retryPolicy ?? new ToolRetryPolicy({ maxRetries: policy.maxRetries });
+    const circuitBreaker = this.options.circuitBreaker ?? new ToolCircuitBreaker();
+    const history = this.options.history ?? new ToolExecutionHistory();
+    const audit = this.options.audit ?? new ToolAudit();
+
+    validator.validate(request.input ?? {});
+
+    if (authorization) {
+      const authorized = await authorization.authorize(request);
+      if (!authorized.succeeded) {
+        throw new ToolAuthorizationException('Authorization failed');
+      }
+    }
+
+    const startedAt = new Date().toISOString();
+    let lastError: Error | undefined;
+    let attempt = 0;
+
+    while (attempt <= retryPolicy.maxRetries) {
+      if (!circuitBreaker.allowRequest()) {
+        const failure = new ToolResult({
+          toolId: this.definition.id,
+          status: ToolExecutionStatus.Failed,
+          error: 'Circuit breaker is open',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          attempts: attempt + 1,
+        });
+        history.record(new ToolExecutionRecord(request, failure, attempt + 1));
+        audit.record(new ToolAuditEntry('tool-failed', 'Circuit breaker blocked execution'));
+        return failure;
+      }
+
+      try {
+        const output = await timeout.race(() => this.handler(request.input));
+        const completedAt = new Date().toISOString();
+        const result = new ToolResult({
+          toolId: this.definition.id,
+          status: ToolExecutionStatus.Completed,
+          output,
+          startedAt,
+          completedAt,
+          attempts: attempt + 1,
+          durationMs: Date.parse(completedAt) - Date.parse(startedAt),
+        });
+        history.record(new ToolExecutionRecord(request, result, attempt + 1));
+        circuitBreaker.recordSuccess();
+        audit.record(new ToolAuditEntry('tool-succeeded', `Completed ${this.definition.name}`));
+        return result;
+      } catch (error) {
+        lastError =
+          error instanceof Error ? error : new ToolExecutionException('Tool execution failed');
+        circuitBreaker.recordFailure();
+        if (retryPolicy.shouldRetry(attempt, lastError)) {
+          attempt += 1;
+          audit.record(new ToolAuditEntry('tool-retried', `Retrying ${this.definition.name}`));
+          continue;
+        }
+        break;
+      }
+    }
+
+    const failure = new ToolResult({
+      toolId: this.definition.id,
+      status: ToolExecutionStatus.Failed,
+      error: lastError?.message ?? 'Tool execution failed',
+      startedAt,
+      completedAt: new Date().toISOString(),
+      attempts: attempt + 1,
+    });
+    history.record(new ToolExecutionRecord(request, failure, attempt + 1));
+    audit.record(new ToolAuditEntry('tool-failed', lastError?.message ?? 'Tool execution failed'));
+    return failure;
+  }
+}
+
+export class ToolManager implements IToolHost {
+  public constructor(
+    options: {
+      readonly registry?: ToolRegistry;
+      readonly catalog?: ToolCatalog;
+      readonly authorization?: IToolAuthorization;
+      readonly validator?: IToolValidator;
+      readonly policy?: ToolPolicy;
+      readonly timeout?: ToolTimeout;
+      readonly retryPolicy?: ToolRetryPolicy;
+      readonly circuitBreaker?: ToolCircuitBreaker;
+      readonly history?: ToolExecutionHistory;
+      readonly audit?: ToolAudit;
+    } = {},
+  ) {
+    this.registry = options.registry ?? new ToolRegistry();
+    this.catalog = options.catalog ?? new ToolCatalog();
+    this.authorization = options.authorization;
+    this.validator = options.validator ?? new ToolValidation();
+    this.policy = options.policy;
+    this.timeout = options.timeout;
+    this.retryPolicy = options.retryPolicy;
+    this.circuitBreaker = options.circuitBreaker;
+    this.history = options.history ?? new ToolExecutionHistory();
+    this.audit = options.audit ?? new ToolAudit();
+  }
+
+  public readonly registry: ToolRegistry;
+  public readonly catalog: ToolCatalog;
+  public readonly history: ToolExecutionHistory;
+  public readonly audit: ToolAudit;
+
+  private readonly authorization?: IToolAuthorization;
+  private readonly validator: IToolValidator;
+  private readonly policy?: ToolPolicy;
+  private readonly timeout?: ToolTimeout;
+  private readonly retryPolicy?: ToolRetryPolicy;
+  private readonly circuitBreaker?: ToolCircuitBreaker;
+
+  public register(tool: ToolDefinition): void {
+    this.registry.register(tool);
+    this.catalog.register(tool);
+  }
+
+  public get(toolId: Identifier): ToolDefinition | undefined {
+    return this.registry.get(toolId);
+  }
+
+  public list(): readonly ToolDefinition[] {
+    return this.registry.list();
+  }
+
+  public discover(
+    options: { capability?: string; category?: string; tag?: string } = {},
+  ): readonly ToolDefinition[] {
+    return this.registry.discover(options);
+  }
+
+  public async execute(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
+    const definition = this.registry.get(request.toolId);
+    if (!definition) {
+      const failure = new ToolResult({
+        toolId: request.toolId,
+        status: ToolExecutionStatus.Failed,
+        error: 'Tool is not registered',
+      });
+      this.history.record(new ToolExecutionRecord(request, failure, 1));
+      return failure;
+    }
+
+    const executor = new ToolExecutor(
+      definition,
+      async (input) => {
+        const result = await definition.execute(
+          new ToolExecutionRequest({ toolId: definition.id, input, context: request.context }),
+        );
+        return (result.output ?? undefined) as SerializableValue;
+      },
+      {
+        authorization: this.authorization,
+        validator: this.validator,
+        policy: this.policy,
+        timeout: this.timeout,
+        retryPolicy: this.retryPolicy,
+        circuitBreaker: this.circuitBreaker,
+        history: this.history,
+        audit: this.audit,
+      },
+    );
+
+    return executor.execute(request);
+  }
+}
+
+export class ToolHost extends ToolManager {}
 
 export class ToolSnapshot {
   public constructor(
