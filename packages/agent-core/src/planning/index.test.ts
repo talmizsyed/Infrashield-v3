@@ -24,6 +24,22 @@ import {
   DependencyGraph,
   ExecutionCheckpoint,
   ExecutionTimeline,
+  AgentAssignment,
+  DependencyPlanner,
+  ExecutionPlanner,
+  ParallelPlanner,
+  PlanningAudit,
+  PlanningConstraint,
+  PlanningContext,
+  PlanningEngine,
+  PlanningGoal,
+  PlanningGraph,
+  PlanningPolicy,
+  PlanningTask,
+  PlanningTaskType,
+  ResourcePlanner,
+  SequentialPlanner,
+  ToolAssignment,
 } from './index';
 
 describe('planning framework', () => {
@@ -181,5 +197,75 @@ describe('planning framework', () => {
 
     const checkpoint = new ExecutionCheckpoint({ id: 'exec-cp', label: 'baseline' });
     expect(checkpoint.label).toBe('baseline');
+  });
+
+  it('decomposes goals into executable graphs and supports replanning', async () => {
+    const goal = new PlanningGoal({
+      id: 'goal-plan',
+      title: 'Deliver release',
+      description: 'Analyze scope, implement changes, validate release.',
+      priority: 'high',
+    });
+
+    const context = new PlanningContext({
+      goal,
+      tenant: 'acme',
+      policy: new PlanningPolicy({ maxParallelism: 2, maxRetries: 2, approvalRequired: true }),
+      constraints: [new PlanningConstraint({ id: 'c-1', description: 'Tenant isolation' })],
+    });
+
+    const engine = new PlanningEngine();
+    const snapshot = await engine.plan(goal, context);
+
+    expect(snapshot.tasks.length).toBeGreaterThan(1);
+    expect(snapshot.graph.nodes.length).toBeGreaterThan(1);
+    expect(snapshot.metrics.taskCount).toBe(snapshot.tasks.length);
+    expect(snapshot.metrics.dependencyCount).toBeGreaterThanOrEqual(1);
+
+    const replan = await engine.replan(snapshot.sessionId, 'dependency changed');
+    expect(replan.sessionId).toBe(snapshot.sessionId);
+    expect(replan.metrics.replanningCount).toBe(1);
+    expect(replan.audit.entries.length).toBeGreaterThan(0);
+  });
+
+  it('builds parallel, sequential, and rollback planning artifacts', () => {
+    const tasks = [
+      new PlanningTask({ id: 'task-a', name: 'Analyze', type: PlanningTaskType.Atomic }),
+      new PlanningTask({ id: 'task-b', name: 'Implement', type: PlanningTaskType.Atomic }),
+      new PlanningTask({ id: 'task-c', name: 'Rollback', type: PlanningTaskType.Rollback }),
+    ];
+
+    const graph = new PlanningGraph();
+    const dependencyPlanner = new DependencyPlanner();
+    dependencyPlanner.attach(graph);
+    dependencyPlanner.plan(tasks);
+
+    const parallelPlanner = new ParallelPlanner();
+    const parallelPlan = parallelPlanner.plan(tasks);
+    expect(parallelPlan.length).toBeGreaterThan(0);
+
+    const sequentialPlanner = new SequentialPlanner();
+    const sequentialPlan = sequentialPlanner.plan(tasks);
+    expect(sequentialPlan.length).toBeGreaterThan(0);
+
+    const executionPlanner = new ExecutionPlanner();
+    const executionPlan = executionPlanner.build(graph, tasks);
+    expect(executionPlan.executionMode).toBe('parallel');
+
+    const agentAssignment = new AgentAssignment();
+    const assignedAgents = agentAssignment.assign(tasks[0], ['agent-1']);
+    expect(assignedAgents).toEqual(['agent-1']);
+
+    const toolAssignment = new ToolAssignment();
+    const assignedTools = toolAssignment.assign(tasks[0], ['tool-1']);
+    expect(assignedTools).toEqual(['tool-1']);
+
+    const resourcePlanner = new ResourcePlanner();
+    const resources = resourcePlanner.plan(tasks[0]);
+    expect(resources.length).toBeGreaterThan(0);
+
+    const audit = new PlanningAudit();
+    audit.record('planning', 'rollback plan recorded');
+    expect(audit.entries).toHaveLength(1);
   });
 });

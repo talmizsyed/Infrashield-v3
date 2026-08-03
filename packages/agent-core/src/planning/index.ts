@@ -821,6 +821,640 @@ export class ExecutionCheckpoint {
   public readonly metadata?: SerializableValueObject;
 }
 
+export enum PlanningTaskType {
+  Atomic = 'atomic',
+  Composite = 'composite',
+  Parallel = 'parallel',
+  Sequential = 'sequential',
+  Conditional = 'conditional',
+  Approval = 'approval',
+  Rollback = 'rollback',
+  Recovery = 'recovery',
+}
+
+export interface IPlanningEngine {
+  plan(goal: PlanningGoal, context: PlanningContext): Promise<PlanningSnapshot>;
+  replan(sessionId: string, reason: string): Promise<PlanningSnapshot>;
+}
+
+export interface IExecutionPlanner {
+  build(graph: PlanningGraph, tasks: readonly PlanningTask[]): PlanningExecutionPlan;
+}
+
+export interface ITaskPlanner {
+  plan(goal: PlanningGoal, context?: PlanningContext): readonly PlanningTask[];
+}
+
+export interface IAgentAssignment {
+  assign(task: PlanningTask, agents: readonly Identifier[]): readonly Identifier[];
+}
+
+export interface IToolAssignment {
+  assign(task: PlanningTask, tools: readonly Identifier[]): readonly Identifier[];
+}
+
+export interface IPlanningStrategy {
+  plan(goal: PlanningGoal, context: PlanningContext): Promise<PlanningSnapshot>;
+}
+
+export class PlanningConstraint {
+  public constructor(options: {
+    readonly id: Identifier;
+    readonly description: string;
+    readonly enforced?: boolean;
+  }) {
+    this.id = options.id;
+    this.description = options.description;
+    this.enforced = options.enforced ?? true;
+  }
+
+  public readonly id: Identifier;
+  public readonly description: string;
+  public readonly enforced: boolean;
+}
+
+export class PlanningPolicy {
+  public constructor(
+    options: {
+      readonly maxParallelism?: number;
+      readonly maxRetries?: number;
+      readonly approvalRequired?: boolean;
+      readonly tenantIsolation?: boolean;
+      readonly governance?: boolean;
+    } = {},
+  ) {
+    this.maxParallelism = options.maxParallelism ?? 2;
+    this.maxRetries = options.maxRetries ?? 1;
+    this.approvalRequired = options.approvalRequired ?? false;
+    this.tenantIsolation = options.tenantIsolation ?? true;
+    this.governance = options.governance ?? true;
+  }
+
+  public readonly maxParallelism: number;
+  public readonly maxRetries: number;
+  public readonly approvalRequired: boolean;
+  public readonly tenantIsolation: boolean;
+  public readonly governance: boolean;
+}
+
+export class PlanningGoal {
+  public constructor(options: {
+    readonly id: Identifier;
+    readonly title: string;
+    readonly description?: string;
+    readonly priority?: string;
+    readonly subGoals?: readonly PlanningGoal[];
+    readonly metadata?: SerializableValueObject;
+  }) {
+    this.id = options.id;
+    this.title = options.title;
+    this.description = options.description ?? '';
+    this.priority = options.priority ?? 'medium';
+    this.subGoals = [...(options.subGoals ?? [])];
+    this.metadata = options.metadata ? Object.freeze({ ...options.metadata }) : undefined;
+  }
+
+  public readonly id: Identifier;
+  public readonly title: string;
+  public readonly description: string;
+  public readonly priority: string;
+  public readonly subGoals: readonly PlanningGoal[];
+  public readonly metadata?: Readonly<SerializableValueObject>;
+}
+
+export class PlanningTask {
+  public constructor(options: {
+    readonly id: Identifier;
+    readonly name: string;
+    readonly type: PlanningTaskType;
+    readonly description?: string;
+    readonly dependsOn?: readonly Identifier[];
+    readonly agentIds?: readonly Identifier[];
+    readonly toolIds?: readonly Identifier[];
+    readonly resources?: readonly string[];
+    readonly retries?: number;
+    readonly rollback?: boolean;
+    readonly metadata?: SerializableValueObject;
+  }) {
+    this.id = options.id;
+    this.name = options.name;
+    this.type = options.type;
+    this.description = options.description ?? '';
+    this.dependsOn = [...(options.dependsOn ?? [])];
+    this.agentIds = [...(options.agentIds ?? [])];
+    this.toolIds = [...(options.toolIds ?? [])];
+    this.resources = [...(options.resources ?? [])];
+    this.retries = options.retries ?? 0;
+    this.rollback = options.rollback ?? false;
+    this.metadata = options.metadata ? Object.freeze({ ...options.metadata }) : undefined;
+  }
+
+  public readonly id: Identifier;
+  public readonly name: string;
+  public readonly type: PlanningTaskType;
+  public readonly description: string;
+  public readonly dependsOn: readonly Identifier[];
+  public readonly agentIds: readonly Identifier[];
+  public readonly toolIds: readonly Identifier[];
+  public readonly resources: readonly string[];
+  public readonly retries: number;
+  public readonly rollback: boolean;
+  public readonly metadata?: Readonly<SerializableValueObject>;
+}
+
+export class PlanningContext {
+  public constructor(options: {
+    readonly goal: PlanningGoal;
+    readonly tenant?: string;
+    readonly policy?: PlanningPolicy;
+    readonly constraints?: readonly PlanningConstraint[];
+    readonly metadata?: SerializableValueObject;
+  }) {
+    this.goal = options.goal;
+    this.tenant = options.tenant;
+    this.policy = options.policy ?? new PlanningPolicy();
+    this.constraints = [...(options.constraints ?? [])];
+    this.metadata = options.metadata ? Object.freeze({ ...options.metadata }) : undefined;
+  }
+
+  public readonly goal: PlanningGoal;
+  public readonly tenant?: string;
+  public readonly policy: PlanningPolicy;
+  public readonly constraints: readonly PlanningConstraint[];
+  public readonly metadata?: Readonly<SerializableValueObject>;
+}
+
+export class PlanningSession {
+  public constructor(options: {
+    readonly id: string;
+    readonly goalId: Identifier;
+    readonly createdAt?: string;
+  }) {
+    this.id = options.id;
+    this.goalId = options.goalId;
+    this.createdAt = options.createdAt ?? new Date().toISOString();
+  }
+
+  public readonly id: string;
+  public readonly goalId: Identifier;
+  public readonly createdAt: string;
+}
+
+export class PlanningNode {
+  public constructor(options: { readonly id: Identifier; readonly task: PlanningTask }) {
+    this.id = options.id;
+    this.task = options.task;
+  }
+
+  public readonly id: Identifier;
+  public readonly task: PlanningTask;
+}
+
+export class PlanningEdge {
+  public constructor(options: {
+    readonly id: Identifier;
+    readonly from: Identifier;
+    readonly to: Identifier;
+    readonly type: string;
+  }) {
+    this.id = options.id;
+    this.from = options.from;
+    this.to = options.to;
+    this.type = options.type;
+  }
+
+  public readonly id: Identifier;
+  public readonly from: Identifier;
+  public readonly to: Identifier;
+  public readonly type: string;
+}
+
+export class PlanningGraph {
+  private readonly nodes: PlanningNode[] = [];
+  private readonly edges: PlanningEdge[] = [];
+
+  public addNode(node: PlanningNode): void {
+    this.nodes.push(node);
+  }
+
+  public addEdge(edge: PlanningEdge): void {
+    this.edges.push(edge);
+  }
+
+  public getNodes(): readonly PlanningNode[] {
+    return [...this.nodes];
+  }
+
+  public getEdges(): readonly PlanningEdge[] {
+    return [...this.edges];
+  }
+}
+
+export class PlanningCheckpoint {
+  public constructor(options: {
+    readonly id: Identifier;
+    readonly sessionId: string;
+    readonly state: string;
+    readonly metadata?: SerializableValueObject;
+  }) {
+    this.id = options.id;
+    this.sessionId = options.sessionId;
+    this.state = options.state;
+    this.metadata = options.metadata;
+  }
+
+  public readonly id: Identifier;
+  public readonly sessionId: string;
+  public readonly state: string;
+  public readonly metadata?: SerializableValueObject;
+}
+
+export class PlanningMetrics {
+  public constructor(
+    options: {
+      readonly taskCount?: number;
+      readonly dependencyCount?: number;
+      readonly criticalPath?: number;
+      readonly parallelizationRatio?: number;
+      readonly latencyMs?: number;
+      readonly replanningCount?: number;
+    } = {},
+  ) {
+    this.taskCount = options.taskCount ?? 0;
+    this.dependencyCount = options.dependencyCount ?? 0;
+    this.criticalPath = options.criticalPath ?? 0;
+    this.parallelizationRatio = options.parallelizationRatio ?? 0;
+    this.latencyMs = options.latencyMs ?? 0;
+    this.replanningCount = options.replanningCount ?? 0;
+  }
+
+  public readonly taskCount: number;
+  public readonly dependencyCount: number;
+  public readonly criticalPath: number;
+  public readonly parallelizationRatio: number;
+  public readonly latencyMs: number;
+  public readonly replanningCount: number;
+}
+
+export class PlanningStatistics {
+  public constructor(public readonly metrics: PlanningMetrics) {}
+}
+
+export class PlanningAudit {
+  private readonly values: string[] = [];
+
+  public record(source: string, message: string): void {
+    this.values.push(`${source}:${message}`);
+  }
+
+  public get entries(): readonly string[] {
+    return [...this.values];
+  }
+}
+
+export class PlanningSnapshot {
+  public constructor(options: {
+    readonly sessionId: string;
+    readonly tasks: readonly PlanningTask[];
+    readonly graph: PlanningGraph;
+    readonly metrics: PlanningMetrics;
+    readonly audit: PlanningAudit;
+    readonly checkpoint?: PlanningCheckpoint;
+    readonly createdAt?: string;
+  }) {
+    this.sessionId = options.sessionId;
+    this.tasks = [...options.tasks];
+    this.graph = options.graph;
+    this.metrics = options.metrics;
+    this.audit = options.audit;
+    this.checkpoint = options.checkpoint;
+    this.createdAt = options.createdAt ?? new Date().toISOString();
+    Object.freeze(this);
+  }
+
+  public readonly sessionId: string;
+  public readonly tasks: readonly PlanningTask[];
+  public readonly graph: PlanningGraph;
+  public readonly metrics: PlanningMetrics;
+  public readonly audit: PlanningAudit;
+  public readonly checkpoint?: PlanningCheckpoint;
+  public readonly createdAt: string;
+}
+
+export class PlanningExecutionPlan {
+  public constructor(options: {
+    readonly executionMode: string;
+    readonly steps: readonly string[];
+    readonly tasks: readonly PlanningTask[];
+  }) {
+    this.executionMode = options.executionMode;
+    this.steps = [...options.steps];
+    this.tasks = [...options.tasks];
+  }
+
+  public readonly executionMode: string;
+  public readonly steps: readonly string[];
+  public readonly tasks: readonly PlanningTask[];
+}
+
+export class TaskPlanner implements ITaskPlanner {
+  public plan(goal: PlanningGoal, _context?: PlanningContext): readonly PlanningTask[] {
+    const baseTasks = [
+      new PlanningTask({
+        id: `${goal.id}-analysis`,
+        name: 'Analyze scope',
+        type: PlanningTaskType.Atomic,
+        description: `Analyze ${goal.title}`,
+        resources: ['analysis'],
+      }),
+      new PlanningTask({
+        id: `${goal.id}-implementation`,
+        name: 'Implement changes',
+        type: PlanningTaskType.Composite,
+        description: `Implement ${goal.title}`,
+        dependsOn: [`${goal.id}-analysis`],
+        resources: ['execution'],
+      }),
+      new PlanningTask({
+        id: `${goal.id}-validation`,
+        name: 'Validate delivery',
+        type: PlanningTaskType.Atomic,
+        description: `Validate ${goal.title}`,
+        dependsOn: [`${goal.id}-implementation`],
+        resources: ['validation'],
+      }),
+    ];
+
+    if (goal.description.toLowerCase().includes('rollback')) {
+      return [
+        ...baseTasks,
+        new PlanningTask({
+          id: `${goal.id}-rollback`,
+          name: 'Rollback plan',
+          type: PlanningTaskType.Rollback,
+          description: 'Prepare rollback instructions',
+          dependsOn: [`${goal.id}-validation`],
+          rollback: true,
+          retries: 1,
+        }),
+      ];
+    }
+
+    return baseTasks;
+  }
+}
+
+export class DependencyPlanner {
+  private graph?: PlanningGraph;
+
+  public attach(graph: PlanningGraph): void {
+    this.graph = graph;
+  }
+
+  public plan(tasks: readonly PlanningTask[]): readonly PlanningEdge[] {
+    if (!this.graph) {
+      return [];
+    }
+
+    const edges: PlanningEdge[] = [];
+    for (let index = 0; index < tasks.length; index += 1) {
+      const task = tasks[index];
+      if (!task) {
+        continue;
+      }
+
+      for (const dependencyId of task.dependsOn) {
+        edges.push(
+          new PlanningEdge({
+            id: `${task.id}-${dependencyId}`,
+            from: dependencyId,
+            to: task.id,
+            type: 'dependency',
+          }),
+        );
+      }
+
+      if (task.dependsOn.length === 0 && index > 0) {
+        const previousTask = tasks[index - 1];
+        if (previousTask) {
+          edges.push(
+            new PlanningEdge({
+              id: `${task.id}-${previousTask.id}`,
+              from: previousTask.id,
+              to: task.id,
+              type: 'sequential',
+            }),
+          );
+        }
+      }
+    }
+
+    for (const edge of edges) {
+      this.graph.addEdge(edge);
+    }
+
+    return edges;
+  }
+}
+
+export class ParallelPlanner {
+  public plan(tasks: readonly PlanningTask[]): readonly PlanningTask[][] {
+    if (tasks.length <= 1) {
+      return [tasks.slice()];
+    }
+
+    const firstHalf = tasks.slice(0, Math.ceil(tasks.length / 2));
+    const secondHalf = tasks.slice(Math.ceil(tasks.length / 2));
+    return [firstHalf, secondHalf];
+  }
+}
+
+export class SequentialPlanner {
+  public plan(tasks: readonly PlanningTask[]): readonly PlanningTask[] {
+    return [...tasks];
+  }
+}
+
+export class ExecutionPlanner implements IExecutionPlanner {
+  public build(graph: PlanningGraph, tasks: readonly PlanningTask[]): PlanningExecutionPlan {
+    const executionMode = tasks.some((task) => task.type === PlanningTaskType.Parallel)
+      ? 'parallel'
+      : 'parallel';
+    const steps = graph.getEdges().length > 0 ? ['analyze', 'execute', 'validate'] : ['execute'];
+    return new PlanningExecutionPlan({ executionMode, steps, tasks });
+  }
+}
+
+export class AgentAssignment implements IAgentAssignment {
+  public assign(task: PlanningTask, agents: readonly Identifier[]): readonly Identifier[] {
+    if (agents.length > 0) {
+      return [...agents];
+    }
+    return [task.id];
+  }
+}
+
+export class ToolAssignment implements IToolAssignment {
+  public assign(task: PlanningTask, tools: readonly Identifier[]): readonly Identifier[] {
+    if (tools.length > 0) {
+      return [...tools];
+    }
+    return [task.id];
+  }
+}
+
+export class ResourcePlanner {
+  public plan(task: PlanningTask): readonly string[] {
+    if (task.resources.length > 0) {
+      return [...task.resources];
+    }
+    return ['shared'];
+  }
+}
+
+export class PlanningPipeline implements IPlanningStrategy {
+  public constructor(
+    private readonly taskPlanner: ITaskPlanner = new TaskPlanner(),
+    private readonly dependencyPlanner: DependencyPlanner = new DependencyPlanner(),
+    private readonly parallelPlanner: ParallelPlanner = new ParallelPlanner(),
+    private readonly sequentialPlanner: SequentialPlanner = new SequentialPlanner(),
+    private readonly executionPlanner: IExecutionPlanner = new ExecutionPlanner(),
+    private readonly agentAssignment: IAgentAssignment = new AgentAssignment(),
+    private readonly toolAssignment: IToolAssignment = new ToolAssignment(),
+    private readonly resourcePlanner: ResourcePlanner = new ResourcePlanner(),
+  ) {}
+
+  public async plan(goal: PlanningGoal, context: PlanningContext): Promise<PlanningSnapshot> {
+    const startedAt = Date.now();
+    const tasks = this.taskPlanner.plan(goal, context);
+    const graph = new PlanningGraph();
+    for (const task of tasks) {
+      graph.addNode(new PlanningNode({ id: task.id, task }));
+    }
+    this.dependencyPlanner.attach(graph);
+    const dependencyPlan = this.dependencyPlanner.plan(tasks);
+    void dependencyPlan;
+    const parallelPlan = this.parallelPlanner.plan(tasks);
+    const sequentialPlan = this.sequentialPlanner.plan(tasks);
+    const executionPlan = this.executionPlanner.build(graph, tasks);
+    const assignedAgents = tasks.flatMap((task) =>
+      this.agentAssignment.assign(task, task.agentIds),
+    );
+    const assignedTools = tasks.flatMap((task) => this.toolAssignment.assign(task, task.toolIds));
+    const resources = tasks.flatMap((task) => this.resourcePlanner.plan(task));
+    const audit = new PlanningAudit();
+    audit.record('planning', `planned ${tasks.length} tasks`);
+    audit.record('execution', `mode:${executionPlan.executionMode}`);
+
+    const metrics = new PlanningMetrics({
+      taskCount: tasks.length,
+      dependencyCount: graph.getEdges().length,
+      criticalPath: Math.max(1, Math.ceil(tasks.length / 2)),
+      parallelizationRatio: parallelPlan.length > 1 ? 0.5 : 0.2,
+      latencyMs: Date.now() - startedAt,
+    });
+
+    const checkpoint = new PlanningCheckpoint({
+      id: `${goal.id}-checkpoint`,
+      sessionId: `${goal.id}-session`,
+      state: 'ready',
+      metadata: {
+        executionMode: executionPlan.executionMode,
+        assignedAgents,
+        assignedTools,
+        resources,
+        sequentialPlanLength: sequentialPlan.length,
+      },
+    });
+
+    return new PlanningSnapshot({
+      sessionId: checkpoint.sessionId,
+      tasks,
+      graph,
+      metrics,
+      audit,
+      checkpoint,
+    });
+  }
+}
+
+export class PlanningManager {
+  private readonly sessions = new Map<string, PlanningSnapshot>();
+
+  public register(sessionId: string, snapshot: PlanningSnapshot): void {
+    this.sessions.set(sessionId, snapshot);
+  }
+
+  public get(sessionId: string): PlanningSnapshot | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  public list(): readonly PlanningSnapshot[] {
+    return [...this.sessions.values()];
+  }
+}
+
+export class PlanningEngine implements IPlanningEngine {
+  public constructor(
+    private readonly pipeline: IPlanningStrategy = new PlanningPipeline(),
+    private readonly manager: PlanningManager = new PlanningManager(),
+  ) {}
+
+  public async plan(goal: PlanningGoal, context: PlanningContext): Promise<PlanningSnapshot> {
+    const session = new PlanningSession({ id: `${goal.id}-session`, goalId: goal.id });
+    const snapshot = await this.pipeline.plan(goal, context);
+    this.manager.register(session.id, snapshot);
+    return new PlanningSnapshot({
+      sessionId: session.id,
+      tasks: snapshot.tasks,
+      graph: snapshot.graph,
+      metrics: new PlanningMetrics({
+        taskCount: snapshot.metrics.taskCount,
+        dependencyCount: snapshot.metrics.dependencyCount,
+        criticalPath: snapshot.metrics.criticalPath,
+        parallelizationRatio: snapshot.metrics.parallelizationRatio,
+        latencyMs: snapshot.metrics.latencyMs,
+        replanningCount: 0,
+      }),
+      audit: snapshot.audit,
+      checkpoint: snapshot.checkpoint,
+    });
+  }
+
+  public async replan(sessionId: string, reason: string): Promise<PlanningSnapshot> {
+    const existing = this.manager.get(sessionId);
+    if (!existing) {
+      throw new Error(`Planning session not found: ${sessionId}`);
+    }
+
+    const audit = new PlanningAudit();
+    audit.record('replanning', reason);
+    for (const entry of existing.audit.entries) {
+      audit.record('history', entry);
+    }
+
+    const metrics = new PlanningMetrics({
+      taskCount: existing.metrics.taskCount,
+      dependencyCount: existing.metrics.dependencyCount,
+      criticalPath: existing.metrics.criticalPath,
+      parallelizationRatio: existing.metrics.parallelizationRatio,
+      latencyMs: existing.metrics.latencyMs + 1,
+      replanningCount: existing.metrics.replanningCount + 1,
+    });
+
+    const snapshot = new PlanningSnapshot({
+      sessionId,
+      tasks: existing.tasks,
+      graph: existing.graph,
+      metrics,
+      audit,
+      checkpoint: existing.checkpoint,
+    });
+    this.manager.register(sessionId, snapshot);
+    return snapshot;
+  }
+}
+
 export class ExecutionTimeline {
   private readonly events: string[] = [];
 
