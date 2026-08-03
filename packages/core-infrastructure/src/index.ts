@@ -35,3 +35,4 @@ export * from './primitives';
 export * from './result';
 export * from './serializer';
 export * from './providers';
+export * from './discovery';
