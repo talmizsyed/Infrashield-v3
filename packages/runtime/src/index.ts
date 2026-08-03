@@ -77,6 +77,7 @@ export {
   type IRuntimeTracer,
 } from './runtime-observability.js';
 export * from './runtime-scheduler.js';
+export * from './unified-agent-runtime.js';
 
 import type { Context } from '@infrashield/context';
 import type { IAgent } from '@infrashield/agent-core';

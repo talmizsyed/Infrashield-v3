@@ -9,9 +9,13 @@
   },
   "dependencies": {
     "@agentic/sdk": "workspace:*",
-    "@infrashield/context": "workspace:*",
     "@infrashield/agent-core": "workspace:*",
-    "@infrashield/contracts": "workspace:*"
+    "@infrashield/ai-core": "workspace:*",
+    "@infrashield/ai-memory": "workspace:*",
+    "@infrashield/context": "workspace:*",
+    "@infrashield/contracts": "workspace:*",
+    "@infrashield/governance": "workspace:*",
+    "@infrashield/workflow-engine": "workspace:*"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts"
