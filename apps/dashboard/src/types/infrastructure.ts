@@ -15,17 +15,18 @@ export interface InfrastructureServerRow {
   memory: string;
   disk: string;
   status: 'healthy' | 'warning' | 'critical' | 'maintenance';
-  datacenter: string;
+  owner: string;
+  location: string;
   os: string;
 }
 
 export interface InfrastructureVirtualizationData {
-  vmware: string;
-  vCenter: string;
-  esxiHosts: number;
+  vCenters: number;
   clusters: number;
+  hosts: number;
+  virtualMachines: number;
   datastores: number;
-  vmCount: number;
+  clusterHealth: number;
 }
 
 export interface InfrastructureOpenShiftData {
@@ -33,15 +34,14 @@ export interface InfrastructureOpenShiftData {
   namespaces: number;
   projects: number;
   pods: number;
-  deployments: number;
+  nodes: number;
   operators: number;
-  nodeHealth: number;
+  alerts: number;
 }
 
 export interface InfrastructureDatabaseRow {
   name: string;
-  environment: string;
-  status: string;
   version: string;
+  health: string;
   backupStatus: string;
 }

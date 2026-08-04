@@ -10,7 +10,8 @@ export async function GET(): Promise<NextResponse> {
       memory: '32 GB',
       disk: '2.4 TB',
       status: 'healthy',
-      datacenter: 'dc-us-east-1',
+      owner: 'Platform Engineering',
+      location: 'DC-US-EAST-1',
       os: 'Linux',
     },
     {
@@ -21,7 +22,8 @@ export async function GET(): Promise<NextResponse> {
       memory: '64 GB',
       disk: '4 TB',
       status: 'warning',
-      datacenter: 'dc-us-east-1',
+      owner: 'Database Services',
+      location: 'DC-US-EAST-1',
       os: 'Linux',
     },
     {
@@ -32,7 +34,8 @@ export async function GET(): Promise<NextResponse> {
       memory: '16 GB',
       disk: '800 GB',
       status: 'healthy',
-      datacenter: 'dc-us-west-2',
+      owner: 'Endpoint Operations',
+      location: 'DC-US-WEST-2',
       os: 'Windows',
     },
     {
@@ -43,7 +46,8 @@ export async function GET(): Promise<NextResponse> {
       memory: '24 GB',
       disk: '1.2 TB',
       status: 'maintenance',
-      datacenter: 'dc-eu-central-1',
+      owner: 'Infrastructure Reliability',
+      location: 'DC-EU-CENTRAL-1',
       os: 'AIX',
     },
     {
@@ -54,7 +58,8 @@ export async function GET(): Promise<NextResponse> {
       memory: '96 GB',
       disk: '6 TB',
       status: 'critical',
-      datacenter: 'dc-us-east-2',
+      owner: 'Virtualization Team',
+      location: 'DC-US-EAST-2',
       os: 'ESXi',
     },
   ]);

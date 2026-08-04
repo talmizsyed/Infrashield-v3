@@ -1,41 +1,31 @@
 import { NextResponse } from 'next/server';
 
 export async function GET(): Promise<NextResponse> {
-  return NextResponse.json([
-    {
-      name: 'ORCL-PRD-01',
-      environment: 'Production',
-      status: 'healthy',
+  return NextResponse.json({
+    Oracle: {
       version: '19c',
+      health: 'healthy',
       backupStatus: 'Succeeded',
     },
-    {
-      name: 'PG-OPS-03',
-      environment: 'Operations',
-      status: 'healthy',
-      version: '15.6',
-      backupStatus: 'Succeeded',
-    },
-    {
-      name: 'MSSQL-CORE-01',
-      environment: 'Production',
-      status: 'warning',
+    'SQL Server': {
       version: '2022',
+      health: 'warning',
       backupStatus: 'Partial',
     },
-    {
-      name: 'MONGO-WARE-01',
-      environment: 'Warehouse',
-      status: 'healthy',
-      version: '7.0',
+    PostgreSQL: {
+      version: '15.6',
+      health: 'healthy',
       backupStatus: 'Succeeded',
     },
-    {
-      name: 'REDIS-CACHE-01',
-      environment: 'Cache',
-      status: 'maintenance',
+    MongoDB: {
+      version: '7.0',
+      health: 'healthy',
+      backupStatus: 'Succeeded',
+    },
+    Redis: {
       version: '7.2',
+      health: 'maintenance',
       backupStatus: 'Pending',
     },
-  ]);
+  });
 }

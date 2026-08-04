@@ -27,7 +27,7 @@ export async function getInfrastructureServers(): Promise<InfrastructureServerRo
 }
 
 export async function getInfrastructureVirtualization(): Promise<InfrastructureVirtualizationData> {
-  const response = await fetch('/api/infrastructure/virtualization');
+  const response = await fetch('/api/infrastructure/vmware');
 
   if (!response.ok) {
     throw new Error('Unable to load virtualization data.');
@@ -53,5 +53,18 @@ export async function getInfrastructureDatabases(): Promise<InfrastructureDataba
     throw new Error('Unable to load database inventory.');
   }
 
-  return (await response.json()) as InfrastructureDatabaseRow[];
+  const data = (await response.json()) as
+    | Record<string, { version: string; health: string; backupStatus: string }>
+    | InfrastructureDatabaseRow[];
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return Object.entries(data).map(([name, details]) => ({
+    name,
+    version: details.version,
+    health: details.health,
+    backupStatus: details.backupStatus,
+  }));
 }

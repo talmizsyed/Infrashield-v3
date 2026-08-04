@@ -6,8 +6,8 @@ export async function GET(): Promise<NextResponse> {
     namespaces: 42,
     projects: 14,
     pods: 184,
-    deployments: 91,
+    nodes: 28,
     operators: 27,
-    nodeHealth: 98,
+    alerts: 2,
   });
 }

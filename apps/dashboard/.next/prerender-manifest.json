@@ -1,23 +1,14 @@
 {
   "version": 4,
   "routes": {
-    "/agents": {
+    "/ai-providers": {
       "experimentalBypassFor": [
         { "type": "header", "key": "Next-Action" },
         { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
       ],
       "initialRevalidateSeconds": false,
-      "srcRoute": "/agents",
-      "dataRoute": "/agents.rsc"
-    },
-    "/governance": {
-      "experimentalBypassFor": [
-        { "type": "header", "key": "Next-Action" },
-        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/governance",
-      "dataRoute": "/governance.rsc"
+      "srcRoute": "/ai-providers",
+      "dataRoute": "/ai-providers.rsc"
     },
     "/infrastructure": {
       "experimentalBypassFor": [
@@ -37,32 +28,14 @@
       "srcRoute": "/security",
       "dataRoute": "/security.rsc"
     },
-    "/vmware": {
+    "/observability": {
       "experimentalBypassFor": [
         { "type": "header", "key": "Next-Action" },
         { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
       ],
       "initialRevalidateSeconds": false,
-      "srcRoute": "/vmware",
-      "dataRoute": "/vmware.rsc"
-    },
-    "/workflows": {
-      "experimentalBypassFor": [
-        { "type": "header", "key": "Next-Action" },
-        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/workflows",
-      "dataRoute": "/workflows.rsc"
-    },
-    "/openshift": {
-      "experimentalBypassFor": [
-        { "type": "header", "key": "Next-Action" },
-        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/openshift",
-      "dataRoute": "/openshift.rsc"
+      "srcRoute": "/observability",
+      "dataRoute": "/observability.rsc"
     },
     "/settings": {
       "experimentalBypassFor": [
@@ -73,14 +46,23 @@
       "srcRoute": "/settings",
       "dataRoute": "/settings.rsc"
     },
-    "/observability": {
+    "/vmware": {
       "experimentalBypassFor": [
         { "type": "header", "key": "Next-Action" },
         { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
       ],
       "initialRevalidateSeconds": false,
-      "srcRoute": "/observability",
-      "dataRoute": "/observability.rsc"
+      "srcRoute": "/vmware",
+      "dataRoute": "/vmware.rsc"
+    },
+    "/agents": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/agents",
+      "dataRoute": "/agents.rsc"
     },
     "/knowledge-graph": {
       "experimentalBypassFor": [
@@ -91,6 +73,33 @@
       "srcRoute": "/knowledge-graph",
       "dataRoute": "/knowledge-graph.rsc"
     },
+    "/workflows": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/workflows",
+      "dataRoute": "/workflows.rsc"
+    },
+    "/governance": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/governance",
+      "dataRoute": "/governance.rsc"
+    },
+    "/openshift": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/openshift",
+      "dataRoute": "/openshift.rsc"
+    },
     "/": {
       "experimentalBypassFor": [
         { "type": "header", "key": "Next-Action" },
@@ -99,22 +108,13 @@
       "initialRevalidateSeconds": false,
       "srcRoute": "/",
       "dataRoute": "/index.rsc"
-    },
-    "/ai-providers": {
-      "experimentalBypassFor": [
-        { "type": "header", "key": "Next-Action" },
-        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/ai-providers",
-      "dataRoute": "/ai-providers.rsc"
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "af8d20e8d8f1c1b34136540c52e4406c",
-    "previewModeSigningKey": "97650c0fc5667397f5940e65aa3a5bd276d76bc192edb71aa18da02065dbd629",
-    "previewModeEncryptionKey": "88aa42056525e6208cb49527dd2c06cdff541357226e028952252bd175a5a037"
+    "previewModeId": "dc93ec9c4494d4af8b208e6908d38f9a",
+    "previewModeSigningKey": "ff4a17736c128717f92e125fe789ffeafc72ddd0b41a0dd18399d392092c20ea",
+    "previewModeEncryptionKey": "1666725b23cb92daafddbcea2fd163163fb6ba58563c68880150384476e170b8"
   }
 }

@@ -24,6 +24,7 @@
     "../chunks/108.js",
     "../chunks/144.js",
     "../chunks/305.js",
+    "../chunks/594.js",
     "../chunks/910.js",
     "../webpack-runtime.js",
     "page_client-reference-manifest.js"

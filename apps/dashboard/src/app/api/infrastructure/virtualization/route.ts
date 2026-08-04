@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 
 export async function GET(): Promise<NextResponse> {
   return NextResponse.json({
-    vmware: 'vSphere 8.0 U2',
-    vCenter: 'vc-01.prod.internal',
-    esxiHosts: 24,
+    vCenters: 2,
     clusters: 6,
+    hosts: 24,
+    virtualMachines: 382,
     datastores: 18,
-    vmCount: 382,
+    clusterHealth: 97,
   });
 }

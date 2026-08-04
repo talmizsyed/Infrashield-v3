@@ -1,6 +1,18 @@
 'use client';
 
-import { useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { AppShell } from '../../components/layout/app-shell';
 import { HealthBadge } from '../../components/ui/health-badge';
 import { LoadingSkeleton } from '../../components/ui/loading-skeleton';
@@ -19,13 +31,27 @@ const statusToneMap: Record<
   maintenance: 'default',
 };
 
+const pageSize = 5;
+const chartColors = ['#22d3ee', '#38bdf8', '#34d399', '#f59e0b', '#fb7185'];
+
+function formatHealthLabel(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export default function InfrastructurePage(): ReactElement {
   const { overview, servers, virtualization, openshift, databases, isLoading, error, refetch } =
     useInfrastructureData();
   const [search, setSearch] = useState('');
   const [environment, setEnvironment] = useState('all');
   const [status, setStatus] = useState('all');
-  const [sortKey, setSortKey] = useState<'hostname' | 'environment' | 'status'>('hostname');
+  const [sortKey, setSortKey] = useState<'hostname' | 'environment' | 'status' | 'owner'>(
+    'hostname',
+  );
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [environment, search, sortKey, status]);
 
   const environments = useMemo(
     () => ['all', ...Array.from(new Set(servers.map((server) => server.environment)))],
@@ -44,7 +70,7 @@ export default function InfrastructurePage(): ReactElement {
       .filter((server) => {
         const matchesSearch =
           normalizedSearch.length === 0 ||
-          [server.hostname, server.ip, server.environment, server.datacenter, server.os]
+          [server.hostname, server.ip, server.environment, server.location, server.owner, server.os]
             .join(' ')
             .toLowerCase()
             .includes(normalizedSearch);
@@ -63,9 +89,103 @@ export default function InfrastructurePage(): ReactElement {
           return left.status.localeCompare(right.status);
         }
 
+        if (sortKey === 'owner') {
+          return left.owner.localeCompare(right.owner);
+        }
+
         return left.hostname.localeCompare(right.hostname);
       });
   }, [environment, search, servers, sortKey, status]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredServers.length / pageSize));
+  const pagedServers = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredServers.slice(start, start + pageSize);
+  }, [filteredServers, page]);
+
+  const environmentDistribution = useMemo(() => {
+    const totals = servers.reduce<Record<string, number>>((accumulator, server) => {
+      accumulator[server.environment] = (accumulator[server.environment] ?? 0) + 1;
+      return accumulator;
+    }, {});
+
+    return Object.entries(totals).map(([name, value]) => ({ name, value }));
+  }, [servers]);
+
+  const healthDistribution = useMemo(() => {
+    const totals = servers.reduce<Record<string, number>>((accumulator, server) => {
+      accumulator[server.status] = (accumulator[server.status] ?? 0) + 1;
+      return accumulator;
+    }, {});
+
+    return Object.entries(totals).map(([name, value]) => ({
+      name: formatHealthLabel(name),
+      value,
+    }));
+  }, [servers]);
+
+  const cpuUtilization = useMemo(() => {
+    if (!servers.length) {
+      return 0;
+    }
+
+    const average = servers.reduce((sum, server) => {
+      if (server.status === 'critical') {
+        return sum + 88;
+      }
+      if (server.status === 'warning') {
+        return sum + 72;
+      }
+      if (server.status === 'maintenance') {
+        return sum + 64;
+      }
+      return sum + 58;
+    }, 0);
+
+    return Math.round(average / servers.length);
+  }, [servers]);
+
+  const memoryUtilization = useMemo(() => {
+    if (!servers.length) {
+      return 0;
+    }
+
+    const average = servers.reduce((sum, server) => {
+      if (server.status === 'critical') {
+        return sum + 91;
+      }
+      if (server.status === 'warning') {
+        return sum + 76;
+      }
+      if (server.status === 'maintenance') {
+        return sum + 68;
+      }
+      return sum + 61;
+    }, 0);
+
+    return Math.round(average / servers.length);
+  }, [servers]);
+
+  const storageUtilization = useMemo(() => {
+    if (!servers.length) {
+      return 0;
+    }
+
+    const average = servers.reduce((sum, server) => {
+      if (server.status === 'critical') {
+        return sum + 83;
+      }
+      if (server.status === 'warning') {
+        return sum + 71;
+      }
+      if (server.status === 'maintenance') {
+        return sum + 65;
+      }
+      return sum + 59;
+    }, 0);
+
+    return Math.round(average / servers.length);
+  }, [servers]);
 
   return (
     <AppShell
@@ -112,10 +232,28 @@ export default function InfrastructurePage(): ReactElement {
           ) : null}
         </div>
 
+        {error ? (
+          <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-200">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium">Unable to load the infrastructure inventory.</p>
+                <p className="mt-1">{error}</p>
+              </div>
+              <button
+                className="rounded-xl border border-rose-400/20 bg-rose-500/15 px-3 py-2 font-medium text-rose-100"
+                onClick={() => refetch()}
+                type="button"
+              >
+                Retry loading
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
           <SectionCard
-            title="Operational posture"
-            description="A consolidated view of platform health, virtualization readiness, and cluster efficiency."
+            title="Cluster overview"
+            description="Virtualization footprint, OpenShift capacity, and platform resilience."
           >
             {isLoading ? (
               <div className="space-y-3">
@@ -127,24 +265,22 @@ export default function InfrastructurePage(): ReactElement {
                 <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                   <div className="flex items-center justify-between text-sm text-slate-400">
                     <span>Virtualization</span>
-                    <span>{virtualization?.vmCount ?? 0} VMs</span>
+                    <span>{virtualization?.virtualMachines ?? 0} VMs</span>
                   </div>
                   <p className="mt-3 text-xl font-semibold text-white">
-                    {virtualization?.vmware ?? 'Unavailable'}
+                    {virtualization?.vCenters ?? 0} vCenters
                   </p>
-                  <p className="mt-1 text-sm text-slate-400">{virtualization?.vCenter ?? 'n/a'}</p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    {virtualization?.clusters ?? 0} clusters • {virtualization?.hosts ?? 0} hosts
+                  </p>
                   <div className="mt-4 space-y-2 text-sm text-slate-300">
-                    <div className="flex items-center justify-between">
-                      <span>ESXi hosts</span>
-                      <span>{virtualization?.esxiHosts ?? 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Clusters</span>
-                      <span>{virtualization?.clusters ?? 0}</span>
-                    </div>
                     <div className="flex items-center justify-between">
                       <span>Datastores</span>
                       <span>{virtualization?.datastores ?? 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Cluster health</span>
+                      <span>{virtualization?.clusterHealth ?? 0}%</span>
                     </div>
                   </div>
                 </div>
@@ -152,23 +288,18 @@ export default function InfrastructurePage(): ReactElement {
                 <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                   <div className="flex items-center justify-between text-sm text-slate-400">
                     <span>OpenShift</span>
-                    <span>{openshift?.nodeHealth ?? 0}% node health</span>
+                    <span>{openshift?.alerts ?? 0} active alerts</span>
                   </div>
                   <p className="mt-3 text-xl font-semibold text-white">
                     {openshift?.clusters ?? 0} clusters
                   </p>
                   <p className="mt-1 text-sm text-slate-400">
-                    {openshift?.namespaces ?? 0} namespaces and {openshift?.deployments ?? 0}{' '}
-                    deployments
+                    {openshift?.namespaces ?? 0} namespaces • {openshift?.pods ?? 0} pods
                   </p>
                   <div className="mt-4 space-y-2 text-sm text-slate-300">
                     <div className="flex items-center justify-between">
-                      <span>Projects</span>
-                      <span>{openshift?.projects ?? 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Pods</span>
-                      <span>{openshift?.pods ?? 0}</span>
+                      <span>Nodes</span>
+                      <span>{openshift?.nodes ?? 0}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Operators</span>
@@ -216,6 +347,116 @@ export default function InfrastructurePage(): ReactElement {
           </SectionCard>
         </div>
 
+        <div className="grid gap-6 xl:grid-cols-2">
+          <SectionCard
+            title="Infrastructure distribution"
+            description="Inventory mix across environments."
+          >
+            {isLoading ? (
+              <LoadingSkeleton className="h-64" />
+            ) : environmentDistribution.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={environmentDistribution}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={90}
+                    >
+                      {environmentDistribution.map((entry, index) => (
+                        <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : null}
+          </SectionCard>
+
+          <SectionCard title="Health donut" description="Server health mix across the estate.">
+            {isLoading ? (
+              <LoadingSkeleton className="h-64" />
+            ) : healthDistribution.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={healthDistribution}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={60}
+                      outerRadius={90}
+                    >
+                      {healthDistribution.map((entry, index) => (
+                        <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : null}
+          </SectionCard>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-3">
+          <SectionCard title="CPU utilization" description="Current workload profile.">
+            {isLoading ? (
+              <LoadingSkeleton className="h-48" />
+            ) : (
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[{ name: 'Current', value: cpuUtilization }]}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#22d3ee" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Memory utilization" description="Working-set pressure.">
+            {isLoading ? (
+              <LoadingSkeleton className="h-48" />
+            ) : (
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[{ name: 'Current', value: memoryUtilization }]}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#38bdf8" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Storage utilization" description="Capacity and retention pressure.">
+            {isLoading ? (
+              <LoadingSkeleton className="h-48" />
+            ) : (
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[{ name: 'Current', value: storageUtilization }]}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#34d399" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+
         <SectionCard
           title="Server inventory"
           description="Live inventory row filtering, status awareness, and rapid triage for infrastructure assets."
@@ -225,7 +466,7 @@ export default function InfrastructurePage(): ReactElement {
               <input
                 aria-label="Search inventory"
                 className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-                placeholder="Search hostname, IP, datacenter, OS"
+                placeholder="Search hostname, IP, owner, location, OS"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -263,12 +504,13 @@ export default function InfrastructurePage(): ReactElement {
                 className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
                 value={sortKey}
                 onChange={(event) =>
-                  setSortKey(event.target.value as 'hostname' | 'environment' | 'status')
+                  setSortKey(event.target.value as 'hostname' | 'environment' | 'status' | 'owner')
                 }
               >
                 <option value="hostname">Hostname</option>
                 <option value="environment">Environment</option>
                 <option value="status">Status</option>
+                <option value="owner">Owner</option>
               </select>
             </div>
           </div>
@@ -291,46 +533,85 @@ export default function InfrastructurePage(): ReactElement {
                 Retry loading
               </button>
             </div>
-          ) : (
-            <div className="overflow-hidden rounded-2xl border border-white/10">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-white/10 text-left text-sm">
-                  <thead className="bg-slate-950/70 text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Host</th>
-                      <th className="px-4 py-3 font-medium">Environment</th>
-                      <th className="px-4 py-3 font-medium">Resources</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Datacenter</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10 bg-slate-900/50 text-slate-200">
-                    {filteredServers.map((server) => (
-                      <tr key={`${server.hostname}-${server.ip}`}>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-white">{server.hostname}</div>
-                          <div className="text-xs text-slate-400">{server.ip}</div>
-                        </td>
-                        <td className="px-4 py-3">{server.environment}</td>
-                        <td className="px-4 py-3">
-                          <div>CPU {server.cpu}</div>
-                          <div className="text-xs text-slate-400">
-                            Mem {server.memory} • Disk {server.disk}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <HealthBadge label={server.status} tone={statusToneMap[server.status]} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div>{server.datacenter}</div>
-                          <div className="text-xs text-slate-400">{server.os}</div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          ) : filteredServers.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-8 text-center text-sm text-slate-400">
+              No inventory rows match the current filters.
             </div>
+          ) : (
+            <>
+              <div className="overflow-hidden rounded-2xl border border-white/10">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-white/10 text-left text-sm">
+                    <thead className="bg-slate-950/70 text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Host</th>
+                        <th className="px-4 py-3 font-medium">Environment</th>
+                        <th className="px-4 py-3 font-medium">Resources</th>
+                        <th className="px-4 py-3 font-medium">Owner</th>
+                        <th className="px-4 py-3 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10 bg-slate-900/50 text-slate-200">
+                      {pagedServers.map((server) => (
+                        <tr key={`${server.hostname}-${server.ip}`}>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-white">{server.hostname}</div>
+                            <div className="text-xs text-slate-400">{server.ip}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div>{server.environment}</div>
+                            <div className="text-xs text-slate-400">{server.location}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div>CPU {server.cpu}</div>
+                            <div className="text-xs text-slate-400">
+                              Mem {server.memory} • Disk {server.disk}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div>{server.owner}</div>
+                            <div className="text-xs text-slate-400">{server.os}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <HealthBadge
+                              label={server.status}
+                              tone={statusToneMap[server.status]}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-400">
+                  Showing {pagedServers.length} of {filteredServers.length} assets
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-200"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    type="button"
+                    disabled={page === 1}
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-slate-400">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-200"
+                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    type="button"
+                    disabled={page === totalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </SectionCard>
 
@@ -349,16 +630,14 @@ export default function InfrastructurePage(): ReactElement {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-medium text-white">{database.name}</p>
-                        <p className="text-sm text-slate-400">
-                          {database.environment} • v{database.version}
-                        </p>
+                        <p className="text-sm text-slate-400">v{database.version}</p>
                       </div>
                       <HealthBadge
-                        label={database.status}
+                        label={database.health}
                         tone={
-                          database.status === 'healthy'
+                          database.health === 'healthy'
                             ? 'positive'
-                            : database.status === 'warning'
+                            : database.health === 'warning'
                               ? 'warning'
                               : 'default'
                         }
@@ -381,9 +660,9 @@ export default function InfrastructurePage(): ReactElement {
             {!isLoading ? (
               <div className="space-y-4">
                 {[
-                  { label: 'Compute utilization', value: 74, tone: 'positive' },
-                  { label: 'Storage saturation', value: 58, tone: 'warning' },
-                  { label: 'Network resilience', value: 91, tone: 'positive' },
+                  { label: 'Compute utilization', value: cpuUtilization, tone: 'positive' },
+                  { label: 'Memory utilization', value: memoryUtilization, tone: 'warning' },
+                  { label: 'Storage utilization', value: storageUtilization, tone: 'positive' },
                 ].map((item) => (
                   <div key={item.label}>
                     <div className="mb-2 flex items-center justify-between text-sm text-slate-300">

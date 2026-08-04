@@ -28,35 +28,35 @@ declare namespace __next_route_internal_types__ {
   type OptionalCatchAllSlug<S extends string> = S extends `${string}${SearchOrHash}` ? never : S;
 
   type StaticRoutes =
+    | `/api/dashboard/ai-platform`
     | `/api/console`
     | `/api/dashboard/infrastructure-summary`
-    | `/api/dashboard/ai-platform`
+    | `/api/dashboard/platform-health`
     | `/api/infrastructure/databases`
-    | `/api/dashboard/runtime`
-    | `/api/infrastructure/openshift`
+    | `/api/dashboard/security`
     | `/api/infrastructure/overview`
     | `/api/infrastructure/servers`
+    | `/api/dashboard/runtime`
     | `/api/infrastructure/virtualization`
-    | `/api/dashboard/security`
-    | `/api/dashboard/platform-health`
+    | `/api/infrastructure/openshift`
+    | `/api/dashboard`
     | `/api/dashboard/ai-platform`
     | `/api/dashboard/infrastructure-summary`
     | `/api/dashboard/platform-health`
     | `/api/dashboard/runtime`
     | `/api/dashboard/security`
-    | `/api/dashboard`
-    | `/ai-providers`
-    | `/infrastructure`
     | `/agents`
+    | `/ai-providers`
     | `/governance`
     | `/knowledge-graph`
     | `/openshift`
+    | `/observability`
+    | `/infrastructure`
+    | `/settings`
+    | `/vmware`
     | `/`
     | `/security`
-    | `/workflows`
-    | `/observability`
-    | `/vmware`
-    | `/settings`;
+    | `/workflows`;
   type DynamicRoutes<T extends string = string> = never;
 
   type RouteImpl<T> =
