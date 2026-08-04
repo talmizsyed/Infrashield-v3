@@ -208,9 +208,6 @@ importers:
       '@infrashield/core-infrastructure':
         specifier: workspace:*
         version: link:../core-infrastructure
-      '@infrashield/runtime':
-        specifier: workspace:*
-        version: link:../runtime
 
   providers/provider-anthropic: {}
 

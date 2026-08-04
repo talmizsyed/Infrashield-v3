@@ -10,7 +10,6 @@
   "dependencies": {
     "@infrashield/context": "workspace:*",
     "@infrashield/contracts": "workspace:*",
-    "@infrashield/runtime": "workspace:*",
     "@infrashield/core-infrastructure": "workspace:*"
   },
   "main": "dist/index.js",

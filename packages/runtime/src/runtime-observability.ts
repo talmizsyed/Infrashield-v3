@@ -3,7 +3,7 @@ import {
   type IRuntimeMetrics,
   type IRuntimeObserver,
   type RuntimeMetricsSnapshot,
-} from './runtime-foundation.js';
+} from '@infrashield/contracts';
 import {
   RuntimeExecutionHistory,
   RuntimeExecutionHistoryEntry,

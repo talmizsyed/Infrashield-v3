@@ -6,8 +6,7 @@ import {
   type IEvent,
   type IEventBus,
 } from '@infrashield/core-infrastructure';
-import type { TimestampString } from '@infrashield/contracts';
-import type { IRuntime } from '@infrashield/runtime';
+import type { IRuntime, TimestampString } from '@infrashield/contracts';
 
 import { WorkflowExecutionException } from './workflow-foundation.js';
 import type { IWorkflowDefinition } from './workflow-foundation.js';

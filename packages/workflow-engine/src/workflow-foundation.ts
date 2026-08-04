@@ -1,12 +1,12 @@
-import type {
-  CorrelationId,
-  Identifier,
-  SerializableValueObject,
-  TimestampString,
+import {
+  ExecutionStatus,
+  type CorrelationId,
+  type Identifier,
+  type IRuntime,
+  type SerializableValueObject,
+  type TimestampString,
 } from '@infrashield/contracts';
 import type { Context } from '@infrashield/context';
-import { ExecutionStatus } from '../../runtime/src/runtime-foundation.js';
-import type { IRuntime } from '../../runtime/src/runtime-foundation.js';
 
 export type WorkflowOwner = string;
 export type WorkflowTag = string;
