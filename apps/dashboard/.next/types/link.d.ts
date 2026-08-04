@@ -28,19 +28,24 @@ declare namespace __next_route_internal_types__ {
   type OptionalCatchAllSlug<S extends string> = S extends `${string}${SearchOrHash}` ? never : S;
 
   type StaticRoutes =
+    | `/api/dashboard/ai-platform`
+    | `/api/dashboard/infrastructure-summary`
+    | `/api/dashboard/platform-health`
+    | `/api/dashboard/security`
+    | `/api/dashboard/runtime`
     | `/api/console`
     | `/ai-providers`
-    | `/governance`
     | `/agents`
-    | `/infrastructure`
-    | `/knowledge-graph`
-    | `/observability`
     | `/openshift`
-    | `/settings`
+    | `/observability`
+    | `/knowledge-graph`
+    | `/infrastructure`
     | `/security`
-    | `/vmware`
+    | `/governance`
     | `/workflows`
-    | `/`;
+    | `/settings`
+    | `/`
+    | `/vmware`;
   type DynamicRoutes<T extends string = string> = never;
 
   type RouteImpl<T> =

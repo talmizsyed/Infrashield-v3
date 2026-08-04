@@ -3,13 +3,13 @@
   "devFiles": [],
   "ampDevFiles": [],
   "lowPriorityFiles": [
-    "static/WP_hdn3FMOrl2kfp6v4n3/_buildManifest.js",
-    "static/WP_hdn3FMOrl2kfp6v4n3/_ssgManifest.js"
+    "static/F2Vc1JGgDzyUfq3pLGPn6/_buildManifest.js",
+    "static/F2Vc1JGgDzyUfq3pLGPn6/_ssgManifest.js"
   ],
   "rootMainFiles": [
     "static/chunks/webpack-ba9b5bab4072e64c.js",
-    "static/chunks/2fc5840f-ff77ef8fc3aeb1fc.js",
-    "static/chunks/234-2094b1a92e51c430.js",
+    "static/chunks/2fc5840f-ba69f553211b870f.js",
+    "static/chunks/234-e1353177f6f72da2.js",
     "static/chunks/main-app-312b06df647c5485.js"
   ],
   "rootMainFilesTree": {},

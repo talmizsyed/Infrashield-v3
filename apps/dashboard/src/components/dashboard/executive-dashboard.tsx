@@ -1,126 +1,153 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { Activity, AlertTriangle, BrainCircuit, Cpu, ShieldCheck } from 'lucide-react';
-import { useConsoleData } from '../../hooks/use-console-data';
-import type { DashboardWidget } from '../../services/dashboard-service';
-import { getDashboardViewModel } from '../../services/dashboard-service';
+import { useExecutiveDashboardData } from '../../hooks/use-executive-dashboard-data';
+import {
+  AgentActivityTimeline,
+  InfrastructureInventoryChart,
+  PlatformHealthGauge,
+  SecurityRiskTrend,
+  WorkflowStatusDonut,
+} from './executive-charts';
+import { HealthChart } from './health-chart';
 import { OverviewGrid } from './overview-grid';
 import { SectionCard } from './section-card';
 import { StatusList } from './status-list';
-import { HealthChart } from './health-chart';
-import { DashboardWidgetCard } from './dashboard-widget-card';
 
 export function ExecutiveDashboard(): ReactElement {
-  const { data, error } = useConsoleData();
-  const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
-  const [widgetError, setWidgetError] = useState<string | null>(null);
+  const { data, error, isLoading } = useExecutiveDashboardData();
+  const platformHealth = data?.platformHealth;
+  const infrastructure = data?.infrastructure;
+  const aiPlatform = data?.aiPlatform;
+  const runtime = data?.runtime;
+  const security = data?.security;
 
-  useEffect(() => {
-    let isMounted = true;
+  const infrastructureItems = infrastructure
+    ? [
+        {
+          label: 'VMware clusters',
+          value: infrastructure.vmwareClusters.toString(),
+          tone: 'positive' as const,
+        },
+        {
+          label: 'OpenShift clusters',
+          value: infrastructure.openshiftClusters.toString(),
+          tone: 'positive' as const,
+        },
+        {
+          label: 'Linux servers',
+          value: infrastructure.linuxServers.toString(),
+          tone: 'default' as const,
+        },
+        {
+          label: 'Windows servers',
+          value: infrastructure.windowsServers.toString(),
+          tone: 'default' as const,
+        },
+        {
+          label: 'Oracle databases',
+          value: infrastructure.oracleDatabases.toString(),
+          tone: 'positive' as const,
+        },
+        {
+          label: 'Kubernetes clusters',
+          value: infrastructure.kubernetesClusters.toString(),
+          tone: 'positive' as const,
+        },
+      ]
+    : [];
 
-    void getDashboardViewModel()
-      .then((viewModel) => {
-        if (isMounted) {
-          setWidgets(viewModel.widgets);
-          setWidgetError(null);
-        }
-      })
-      .catch((err) => {
-        if (isMounted) {
-          setWidgetError(err instanceof Error ? err.message : 'Unable to load dashboard widgets.');
-        }
-      });
+  const workflowItems = runtime
+    ? [
+        {
+          label: 'Running executions',
+          value: runtime.runningExecutions.toString(),
+          tone: 'positive' as const,
+        },
+        { label: 'Queue depth', value: runtime.queueDepth.toString(), tone: 'warning' as const },
+        {
+          label: 'Failed executions',
+          value: runtime.failedExecutions.toString(),
+          tone: 'danger' as const,
+        },
+        {
+          label: 'Average latency',
+          value: `${runtime.averageLatency}ms`,
+          tone: 'default' as const,
+        },
+      ]
+    : [];
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const agentItems = aiPlatform
+    ? [
+        {
+          label: 'Active agents',
+          value: aiPlatform.activeAgents.toString(),
+          tone: 'positive' as const,
+        },
+        {
+          label: 'Running workflows',
+          value: aiPlatform.runningWorkflows.toString(),
+          tone: 'positive' as const,
+        },
+        {
+          label: 'LLM providers',
+          value: aiPlatform.llmProviders.toString(),
+          tone: 'default' as const,
+        },
+        {
+          label: 'Prompt executions',
+          value: aiPlatform.promptExecutions.toLocaleString(),
+          tone: 'default' as const,
+        },
+      ]
+    : [];
 
-  const chartData = [
-    { name: 'Mon', value: 88 },
-    { name: 'Tue', value: 91 },
-    { name: 'Wed', value: 95 },
-    { name: 'Thu', value: 93 },
-    { name: 'Fri', value: 97 },
-    { name: 'Sat', value: 98 },
-  ];
+  const securityItems = security
+    ? [
+        {
+          label: 'Open vulnerabilities',
+          value: security.openVulnerabilities.toString(),
+          tone: 'warning' as const,
+        },
+        {
+          label: 'Critical CVEs',
+          value: security.criticalCVEs.toString(),
+          tone: 'danger' as const,
+        },
+        {
+          label: 'Patch compliance',
+          value: `${security.patchCompliance}%`,
+          tone: 'positive' as const,
+        },
+        {
+          label: 'Zero Trust score',
+          value: `${security.zeroTrustScore}%`,
+          tone: 'positive' as const,
+        },
+      ]
+    : [];
 
-  const infrastructureItems = [
-    {
-      label: 'OpenShift cluster',
-      value: '3 control planes / 18 workers',
-      tone: 'positive' as const,
-    },
-    {
-      label: 'VMware fabric',
-      value: '6 clusters / 94% readiness',
-      tone: 'positive' as const,
-    },
-    {
-      label: 'Storage',
-      value: '78% utilized • 1.4 PB available',
-      tone: 'warning' as const,
-    },
-    {
-      label: 'Network',
-      value: '7.2 Gbps • 0.08% packet loss',
-      tone: 'positive' as const,
-    },
-    {
-      label: 'Database',
-      value: 'Latency 21ms • failover ready',
-      tone: 'positive' as const,
-    },
-    {
-      label: 'Certificate status',
-      value: '98% valid • 2 expiring soon',
-      tone: 'warning' as const,
-    },
-  ];
-
-  const workflowItems = [
-    { label: 'Running', value: `${data?.summary?.workflowRuns ?? 42}`, tone: 'positive' as const },
-    { label: 'Queued', value: '17', tone: 'default' as const },
-    { label: 'Completed', value: '1,284', tone: 'positive' as const },
-    { label: 'Failed', value: '2', tone: 'danger' as const },
-  ];
-
-  const agentItems = [
-    {
-      label: 'Running agents',
-      value: `${data?.summary?.activeAgents ?? 18}`,
-      tone: 'positive' as const,
-    },
-    { label: 'Thinking', value: '6', tone: 'default' as const },
-    { label: 'Waiting', value: '11', tone: 'warning' as const },
-    { label: 'Executing', value: '4', tone: 'positive' as const },
-  ];
-
-  const activityFeed = [
-    {
-      title: 'Governance approval',
-      detail: 'Security policy review moved to final sign-off with zero exception drift.',
-      tone: 'positive' as const,
-    },
-    {
-      title: 'AI routing decision',
-      detail: 'Provider failover triggered to Gemini for low-latency routing.',
-      tone: 'warning' as const,
-    },
-    {
-      title: 'Infrastructure event',
-      detail: 'Storage throughput peaked at 7.2 Gbps after a replication sweep.',
-      tone: 'positive' as const,
-    },
-    {
-      title: 'Security alert',
-      detail: 'Anomalous access pattern detected in the runtime fabric.',
-      tone: 'danger' as const,
-    },
-  ];
-
-  const primaryWidgets = useMemo(() => widgets.slice(0, 4), [widgets]);
+  const activityFeed = platformHealth
+    ? [
+        {
+          title: 'Platform health',
+          detail: `${platformHealth.overallHealth}% overall health with ${platformHealth.uptime} uptime.`,
+          tone: 'positive' as const,
+        },
+        {
+          title: 'Critical alert exposure',
+          detail: `${platformHealth.criticalAlerts} critical alerts require operational attention.`,
+          tone: 'danger' as const,
+        },
+        {
+          title: 'Warning alert exposure',
+          detail: `${platformHealth.warningAlerts} warning alerts are currently being monitored.`,
+          tone: 'warning' as const,
+        },
+      ]
+    : [];
 
   return (
     <div className="space-y-6">
@@ -141,146 +168,178 @@ export function ExecutiveDashboard(): ReactElement {
           <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
             <div className="font-semibold">Current platform health</div>
             <div className="mt-1 text-2xl font-semibold text-white">
-              {data?.summary?.status ?? 'Healthy'}
+              {isLoading
+                ? 'Loading…'
+                : platformHealth
+                  ? `${platformHealth.overallHealth}%`
+                  : 'Unavailable'}
             </div>
           </div>
         </div>
       </header>
 
-      <OverviewGrid />
+      <OverviewGrid data={data} isLoading={isLoading} />
 
-      {error || widgetError ? (
-        <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-          {error ?? widgetError}
+      {error ? (
+        <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+          {error}
         </div>
       ) : null}
 
-      {primaryWidgets.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {primaryWidgets.map((widget) => (
-            <DashboardWidgetCard key={widget.id} widget={widget} />
-          ))}
-        </div>
-      ) : null}
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <SectionCard title="Platform health gauge" description="Live weighted service health.">
+          <PlatformHealthGauge data={platformHealth?.healthTrend} isLoading={isLoading} />
+        </SectionCard>
+        <SectionCard title="Infrastructure inventory" description="Managed operational estate.">
+          <InfrastructureInventoryChart data={infrastructure?.inventory} isLoading={isLoading} />
+        </SectionCard>
+        <SectionCard
+          title="Agent activity timeline"
+          description="Active agents by operating window."
+        >
+          <AgentActivityTimeline data={aiPlatform?.agentActivity} isLoading={isLoading} />
+        </SectionCard>
+        <SectionCard title="Workflow status" description="Current orchestration distribution.">
+          <WorkflowStatusDonut data={runtime?.workflowStatus} isLoading={isLoading} />
+        </SectionCard>
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <SectionCard
           title="Infrastructure health"
-          description="Cross-domain posture for OpenShift, VMware, storage, networking, database, and certificate readiness."
+          description="Cross-domain posture for clusters, servers, databases, and Kubernetes readiness."
         >
-          <StatusList items={infrastructureItems} />
+          {infrastructureItems.length > 0 ? (
+            <StatusList items={infrastructureItems} />
+          ) : (
+            <EmptyState isLoading={isLoading} />
+          )}
         </SectionCard>
 
         <SectionCard
           title="AI control center"
-          description="Provider posture, routing quality, and failover readiness in a single command surface."
+          description="Provider posture, routing quality, and operational throughput."
         >
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-400">Current provider</p>
-                <ShieldCheck className="h-4 w-4 text-cyan-300" />
-              </div>
-              <p className="mt-3 text-2xl font-semibold text-white">
-                {data?.providers?.[0]?.name ?? 'Gemini'}
-              </p>
+          {aiPlatform ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <LiveMetric
+                label="Active agents"
+                value={aiPlatform.activeAgents.toString()}
+                icon={<ShieldCheck className="h-4 w-4 text-cyan-300" />}
+              />
+              <LiveMetric
+                label="Running workflows"
+                value={aiPlatform.runningWorkflows.toString()}
+                icon={<Activity className="h-4 w-4 text-cyan-300" />}
+              />
+              <LiveMetric
+                label="AI response time"
+                value={`${aiPlatform.aiResponseTime}ms`}
+                icon={<Cpu className="h-4 w-4 text-cyan-300" />}
+              />
+              <LiveMetric
+                label="Prompt executions"
+                value={aiPlatform.promptExecutions.toLocaleString()}
+                icon={<BrainCircuit className="h-4 w-4 text-cyan-300" />}
+              />
             </div>
-            <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-400">Fallback provider</p>
-                <Activity className="h-4 w-4 text-cyan-300" />
-              </div>
-              <p className="mt-3 text-2xl font-semibold text-white">Anthropic</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-400">Latency</p>
-                <Cpu className="h-4 w-4 text-cyan-300" />
-              </div>
-              <p className="mt-3 text-2xl font-semibold text-white">196ms</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-400">Token usage</p>
-                <BrainCircuit className="h-4 w-4 text-cyan-300" />
-              </div>
-              <p className="mt-3 text-2xl font-semibold text-white">7.1M</p>
-            </div>
-          </div>
+          ) : (
+            <EmptyState isLoading={isLoading} />
+          )}
         </SectionCard>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <SectionCard
           title="Workflow center"
-          description="Execution posture for orchestration, queue depth, completions, and failure signal quality."
+          description="Execution posture for orchestration, queue depth, and failure signal quality."
         >
-          <StatusList items={workflowItems} />
+          {workflowItems.length > 0 ? (
+            <StatusList items={workflowItems} />
+          ) : (
+            <EmptyState isLoading={isLoading} />
+          )}
         </SectionCard>
 
         <SectionCard
           title="Agent center"
-          description="Runtime state for thinking, waiting, executing, and memory intensive agent operations."
+          description="Runtime state for agent activity, workflow execution, and provider availability."
         >
-          <StatusList items={agentItems} />
+          {agentItems.length > 0 ? (
+            <StatusList items={agentItems} />
+          ) : (
+            <EmptyState isLoading={isLoading} />
+          )}
         </SectionCard>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <SectionCard
-          title="Knowledge graph"
-          description="Interactive topology placeholder with discovery insights and memory relationships."
+          title="Runtime performance"
+          description="Execution latency and queue signals across the runtime fabric."
         >
-          <div className="rounded-3xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/10 via-slate-950 to-slate-900 p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm text-slate-400">Relationship graph</p>
-                <p className="mt-2 text-2xl font-semibold text-white">1.2K nodes • 8.4K links</p>
+          {runtime ? (
+            <div className="rounded-3xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/10 via-slate-950 to-slate-900 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-slate-400">Average execution latency</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">
+                    {runtime.averageLatency}ms
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200">
+                  {runtime.runningExecutions} running
+                </div>
               </div>
-              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200">
-                Live topology
-              </div>
-            </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                <p className="text-sm text-slate-400">Recent discoveries</p>
-                <p className="mt-2 text-xl font-semibold text-white">12 high-value relationships</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                <p className="text-sm text-slate-400">Retrieval confidence</p>
-                <p className="mt-2 text-xl font-semibold text-white">96.3%</p>
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                <LiveMetric label="Queue depth" value={runtime.queueDepth.toString()} />
+                <LiveMetric label="Failed executions" value={runtime.failedExecutions.toString()} />
               </div>
             </div>
-          </div>
+          ) : (
+            <EmptyState isLoading={isLoading} />
+          )}
         </SectionCard>
 
         <SectionCard
           title="Security posture"
-          description="Threats, vulnerabilities, critical assets, and policy compliance in one view."
+          description="Vulnerabilities, CVEs, patch compliance, and Zero Trust posture."
         >
-          <StatusList
-            items={[
-              { label: 'Threats', value: '3 active', tone: 'danger' },
-              { label: 'Vulnerabilities', value: '12 critical', tone: 'warning' },
-              { label: 'Critical assets', value: '89 protected', tone: 'positive' },
-              { label: 'Compliance', value: '98% aligned', tone: 'positive' },
-            ]}
-          />
+          {securityItems.length > 0 ? (
+            <StatusList items={securityItems} />
+          ) : (
+            <EmptyState isLoading={isLoading} />
+          )}
         </SectionCard>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <SectionCard
           title="Platform health trend"
-          description="Rolling performance for the last seven days across core runtime signals."
+          description="Rolling service health across core runtime signals."
         >
-          <HealthChart data={chartData} />
+          {platformHealth?.healthTrend.length ? (
+            <HealthChart
+              data={platformHealth.healthTrend.map(({ label, value }) => ({ name: label, value }))}
+            />
+          ) : (
+            <EmptyState isLoading={isLoading} />
+          )}
         </SectionCard>
 
         <SectionCard
-          title="Activity feed"
-          description="Live operational events, governance approvals, AI decisions, and secure signals."
+          title="Security risk trend"
+          description="Open vulnerability trend for the current operating window."
         >
+          <SecurityRiskTrend data={security?.riskTrend} isLoading={isLoading} />
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        title="Activity feed"
+        description="Live operational summary from platform health signals."
+      >
+        {activityFeed.length > 0 ? (
           <div className="space-y-3">
             {activityFeed.map((event) => (
               <div
@@ -297,8 +356,40 @@ export function ExecutiveDashboard(): ReactElement {
               </div>
             ))}
           </div>
-        </SectionCard>
+        ) : (
+          <EmptyState isLoading={isLoading} />
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+function LiveMetric({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?: ReactElement;
+}): ReactElement {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-400">{label}</p>
+        {icon}
       </div>
+      <p className="mt-3 text-2xl font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+function EmptyState({ isLoading }: { isLoading: boolean }): ReactElement {
+  return (
+    <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/40 p-4 text-sm text-slate-400">
+      {isLoading
+        ? 'Loading operational data…'
+        : 'No operational data is available for this surface yet.'}
     </div>
   );
 }

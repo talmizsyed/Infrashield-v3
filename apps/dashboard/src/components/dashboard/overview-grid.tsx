@@ -1,70 +1,86 @@
 import type { ReactElement } from 'react';
-import {
-  Activity,
-  Bot,
-  BrainCircuit,
-  Cpu,
-  HardHat,
-  Layers3,
-  ShieldCheck,
-  Workflow,
-} from 'lucide-react';
+import { Activity, Bot, Cpu, Layers3, ShieldCheck, Workflow } from 'lucide-react';
 import { KpiCard } from './kpi-card';
-import { useConsoleData } from '../../hooks/use-console-data';
+import { LoadingSkeleton } from '../ui/loading-skeleton';
+import type { ExecutiveDashboardData } from '../../types/executive-dashboard';
 
-export function OverviewGrid(): ReactElement {
-  const { data } = useConsoleData();
+interface OverviewGridProps {
+  data: ExecutiveDashboardData | null;
+  isLoading: boolean;
+}
+
+export function OverviewGrid({ data, isLoading }: OverviewGridProps): ReactElement {
+  if (isLoading) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 8 }, (_, index) => (
+          <LoadingSkeleton key={index} className="h-36" />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <KpiCard
         label="Platform health"
-        value={data?.summary?.status ?? 'Healthy'}
+        value={data ? `${data.platformHealth.overallHealth}%` : '—'}
         detail="Runtime posture and service integrity"
         tone="positive"
         icon={<ShieldCheck className="h-5 w-5" />}
       />
       <KpiCard
         label="Running agents"
-        value={data?.summary?.activeAgents?.toString() ?? '18'}
+        value={data?.aiPlatform.activeAgents.toString() ?? '—'}
         detail="Live execution surfaces"
         icon={<Bot className="h-5 w-5" />}
       />
       <KpiCard
         label="Running workflows"
-        value={data?.summary?.workflowRuns?.toString() ?? '42'}
+        value={data?.aiPlatform.runningWorkflows.toString() ?? '—'}
         detail="Current orchestration load"
         icon={<Workflow className="h-5 w-5" />}
       />
       <KpiCard
-        label="Pending approvals"
-        value={data?.summary?.approvalsPending?.toString() ?? '6'}
-        detail="Governance review queue"
+        label="Active alerts"
+        value={data?.platformHealth.activeAlerts.toString() ?? '—'}
+        detail="Critical and warning operational signals"
         tone="warning"
-        icon={<HardHat className="h-5 w-5" />}
+        icon={<Activity className="h-5 w-5" />}
       />
       <KpiCard
-        label="Knowledge graph nodes"
-        value="1.2K"
-        detail="Context memory topology"
-        icon={<BrainCircuit className="h-5 w-5" />}
+        label="Prompt executions"
+        value={data?.aiPlatform.promptExecutions.toLocaleString() ?? '—'}
+        detail="AI requests processed by the platform"
+        icon={<Cpu className="h-5 w-5" />}
       />
       <KpiCard
         label="Infrastructure assets"
-        value="382"
-        detail="VMware and OpenShift stock"
+        value={
+          data
+            ? (
+                data.infrastructure.linuxServers +
+                data.infrastructure.windowsServers +
+                data.infrastructure.vmwareClusters +
+                data.infrastructure.openshiftClusters +
+                data.infrastructure.oracleDatabases +
+                data.infrastructure.kubernetesClusters
+              ).toString()
+            : '—'
+        }
+        detail="Cluster, server, database, and Kubernetes inventory"
         icon={<Layers3 className="h-5 w-5" />}
       />
       <KpiCard
-        label="Open incidents"
-        value="3"
-        detail="Active priority signals"
+        label="Open vulnerabilities"
+        value={data?.security.openVulnerabilities.toString() ?? '—'}
+        detail="Vulnerabilities requiring security attention"
         tone="danger"
         icon={<Activity className="h-5 w-5" />}
       />
       <KpiCard
-        label="Provider health"
-        value={`${data?.summary?.providersHealthy ?? 6}/6`}
+        label="LLM providers"
+        value={data?.aiPlatform.llmProviders.toString() ?? '—'}
         detail="Model routing readiness"
         icon={<Cpu className="h-5 w-5" />}
       />

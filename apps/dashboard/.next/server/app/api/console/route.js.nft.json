@@ -23,6 +23,7 @@
     "../../../../../package.json",
     "../../../../package.json",
     "../../../chunks/108.js",
+    "../../../chunks/531.js",
     "../../../webpack-runtime.js",
     "route_client-reference-manifest.js"
   ]
