@@ -1,0 +1,61 @@
+import { NextResponse } from 'next/server';
+
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json([
+    {
+      hostname: 'prod-app-01',
+      ip: '10.12.18.21',
+      environment: 'Production',
+      cpu: '8 vCPU',
+      memory: '32 GB',
+      disk: '2.4 TB',
+      status: 'healthy',
+      datacenter: 'dc-us-east-1',
+      os: 'Linux',
+    },
+    {
+      hostname: 'prod-db-01',
+      ip: '10.12.18.22',
+      environment: 'Production',
+      cpu: '16 vCPU',
+      memory: '64 GB',
+      disk: '4 TB',
+      status: 'warning',
+      datacenter: 'dc-us-east-1',
+      os: 'Linux',
+    },
+    {
+      hostname: 'corp-win-07',
+      ip: '10.14.9.18',
+      environment: 'Corporate',
+      cpu: '4 vCPU',
+      memory: '16 GB',
+      disk: '800 GB',
+      status: 'healthy',
+      datacenter: 'dc-us-west-2',
+      os: 'Windows',
+    },
+    {
+      hostname: 'finance-aix-02',
+      ip: '10.30.8.33',
+      environment: 'Finance',
+      cpu: '8 vCPU',
+      memory: '24 GB',
+      disk: '1.2 TB',
+      status: 'maintenance',
+      datacenter: 'dc-eu-central-1',
+      os: 'AIX',
+    },
+    {
+      hostname: 'vmware-esxi-03',
+      ip: '10.24.1.40',
+      environment: 'Production',
+      cpu: '24 vCPU',
+      memory: '96 GB',
+      disk: '6 TB',
+      status: 'critical',
+      datacenter: 'dc-us-east-2',
+      os: 'ESXi',
+    },
+  ]);
+}

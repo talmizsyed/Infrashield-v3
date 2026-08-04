@@ -7,7 +7,7 @@ describe('dashboard service layer', () => {
 
     expect(result.summary.status).toBeDefined();
     expect(result.widgets.length).toBeGreaterThan(0);
-    expect(result.widgets[0].id).toBeDefined();
+    expect(result.widgets[0]?.id).toBeDefined();
   });
 
   it('returns module page scaffolding for each sidebar module', async () => {

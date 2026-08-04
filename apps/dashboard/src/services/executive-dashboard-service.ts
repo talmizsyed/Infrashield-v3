@@ -7,26 +7,30 @@ import type {
   SecurityData,
 } from '../types/executive-dashboard';
 
-async function getDashboardResource<T>(resource: string): Promise<T> {
-  const response = await fetch(`/api/dashboard/${resource}`, {
+interface AggregatedDashboardResponse {
+  platformHealth: PlatformHealthData;
+  infrastructureSummary: InfrastructureSummaryData;
+  aiPlatform: AiPlatformData;
+  runtime: RuntimeData;
+  security: SecurityData;
+}
+
+export async function getExecutiveDashboardData(): Promise<ExecutiveDashboardData> {
+  const response = await fetch('/api/dashboard', {
     headers: { Accept: 'application/json' },
   });
 
   if (!response.ok) {
-    throw new Error(`Unable to load ${resource.replaceAll('-', ' ')}.`);
+    throw new Error('Unable to load executive dashboard data.');
   }
 
-  return (await response.json()) as T;
-}
+  const data = (await response.json()) as AggregatedDashboardResponse;
 
-export async function getExecutiveDashboardData(): Promise<ExecutiveDashboardData> {
-  const [platformHealth, infrastructure, aiPlatform, runtime, security] = await Promise.all([
-    getDashboardResource<PlatformHealthData>('platform-health'),
-    getDashboardResource<InfrastructureSummaryData>('infrastructure-summary'),
-    getDashboardResource<AiPlatformData>('ai-platform'),
-    getDashboardResource<RuntimeData>('runtime'),
-    getDashboardResource<SecurityData>('security'),
-  ]);
-
-  return { platformHealth, infrastructure, aiPlatform, runtime, security };
+  return {
+    platformHealth: data.platformHealth,
+    infrastructure: data.infrastructureSummary,
+    aiPlatform: data.aiPlatform,
+    runtime: data.runtime,
+    security: data.security,
+  };
 }
