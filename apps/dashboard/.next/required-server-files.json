@@ -218,6 +218,6 @@
     ".next/server/next-font-manifest.json"
   ],
   "ignore": [
-    "../../node_modules/.pnpm/next@15.0.0_react-dom@19.0.0_react@19.0.0__react@19.0.0/node_modules/next/dist/compiled/@ampproject/toolbox-optimizer/**/*"
+    "../../node_modules/.pnpm/next@15.0.0_@babel+core@7.29.7_supports-color@7.2.0__react-dom@19.0.0_react@19.0.0__react@19.0.0/node_modules/next/dist/compiled/@ampproject/toolbox-optimizer/**/*"
   ]
 }

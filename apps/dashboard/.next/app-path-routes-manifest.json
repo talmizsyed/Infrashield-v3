@@ -1,1 +1,16 @@
-{ "/_not-found/page": "/_not-found", "/page": "/" }
+{
+  "/api/console/route": "/api/console",
+  "/_not-found/page": "/_not-found",
+  "/ai-providers/page": "/ai-providers",
+  "/governance/page": "/governance",
+  "/agents/page": "/agents",
+  "/observability/page": "/observability",
+  "/page": "/",
+  "/security/page": "/security",
+  "/infrastructure/page": "/infrastructure",
+  "/openshift/page": "/openshift",
+  "/workflows/page": "/workflows",
+  "/vmware/page": "/vmware",
+  "/settings/page": "/settings",
+  "/knowledge-graph/page": "/knowledge-graph"
+}

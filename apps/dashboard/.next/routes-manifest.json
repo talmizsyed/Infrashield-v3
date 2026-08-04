@@ -21,6 +21,72 @@
       "regex": "^/_not\\-found(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/agents",
+      "regex": "^/agents(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/agents(?:/)?$"
+    },
+    {
+      "page": "/ai-providers",
+      "regex": "^/ai\\-providers(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/ai\\-providers(?:/)?$"
+    },
+    {
+      "page": "/governance",
+      "regex": "^/governance(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/governance(?:/)?$"
+    },
+    {
+      "page": "/infrastructure",
+      "regex": "^/infrastructure(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/infrastructure(?:/)?$"
+    },
+    {
+      "page": "/knowledge-graph",
+      "regex": "^/knowledge\\-graph(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/knowledge\\-graph(?:/)?$"
+    },
+    {
+      "page": "/observability",
+      "regex": "^/observability(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/observability(?:/)?$"
+    },
+    {
+      "page": "/openshift",
+      "regex": "^/openshift(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/openshift(?:/)?$"
+    },
+    {
+      "page": "/security",
+      "regex": "^/security(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/security(?:/)?$"
+    },
+    {
+      "page": "/settings",
+      "regex": "^/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings(?:/)?$"
+    },
+    {
+      "page": "/vmware",
+      "regex": "^/vmware(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/vmware(?:/)?$"
+    },
+    {
+      "page": "/workflows",
+      "regex": "^/workflows(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/workflows(?:/)?$"
     }
   ],
   "dataRoutes": [],

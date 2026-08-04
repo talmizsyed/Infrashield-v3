@@ -23,7 +23,9 @@ export function SidebarNav(): ReactElement {
       <nav className="space-y-1">
         {navigationSections.map((section) => {
           const href = section.href as Route;
-          const isActive = pathname === section.href || pathname.startsWith(`${section.href}/`);
+          const isActive =
+            pathname === section.href ||
+            (section.href !== '/' && pathname.startsWith(`${section.href}/`));
 
           return (
             <Link

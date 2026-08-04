@@ -1,6 +1,105 @@
 {
   "version": 4,
   "routes": {
+    "/openshift": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/openshift",
+      "dataRoute": "/openshift.rsc"
+    },
+    "/settings": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/settings",
+      "dataRoute": "/settings.rsc"
+    },
+    "/workflows": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/workflows",
+      "dataRoute": "/workflows.rsc"
+    },
+    "/governance": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/governance",
+      "dataRoute": "/governance.rsc"
+    },
+    "/vmware": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/vmware",
+      "dataRoute": "/vmware.rsc"
+    },
+    "/agents": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/agents",
+      "dataRoute": "/agents.rsc"
+    },
+    "/observability": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/observability",
+      "dataRoute": "/observability.rsc"
+    },
+    "/infrastructure": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/infrastructure",
+      "dataRoute": "/infrastructure.rsc"
+    },
+    "/ai-providers": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/ai-providers",
+      "dataRoute": "/ai-providers.rsc"
+    },
+    "/knowledge-graph": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/knowledge-graph",
+      "dataRoute": "/knowledge-graph.rsc"
+    },
+    "/security": {
+      "experimentalBypassFor": [
+        { "type": "header", "key": "Next-Action" },
+        { "type": "header", "key": "content-type", "value": "multipart/form-data;.*" }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/security",
+      "dataRoute": "/security.rsc"
+    },
     "/": {
       "experimentalBypassFor": [
         { "type": "header", "key": "Next-Action" },
@@ -14,8 +113,8 @@
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "1bcbf49d6225d19837aeb5a65c71dbde",
-    "previewModeSigningKey": "e6f2f22c529d284cd3f6ceb6f8ab5a3525774ba9bd66418ee08c0ce65018c1af",
-    "previewModeEncryptionKey": "ecfe1f745d9f2c3757a4934bb63d47928adbdf4fd10b94f19044cba3933fcfa6"
+    "previewModeId": "3b34cc694908caf7e3783097861ba1aa",
+    "previewModeSigningKey": "7ea253885ecfe3d5b5f8a1e3a38994925f722b81baddc5fd287b6191bcdae208",
+    "previewModeEncryptionKey": "e8af889996e61c1e1827e4f47cf50641d725f91ae6bfa1c7977e9bd39c66cb12"
   }
 }
