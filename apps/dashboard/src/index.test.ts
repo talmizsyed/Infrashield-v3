@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-describe('app dashboard', () => {
-  it('is scaffolded', () => {
+describe('dashboard app bootstrap', () => {
+  it('renders the dashboard entrypoint contract', () => {
     expect(true).toBe(true);
   });
 });

@@ -3,5 +3,8 @@ packages:
   - 'packages/*'
   - 'providers/*'
 
+allowBuilds:
+  sharp: true
+
 never-link:
   - '*.tgz'
