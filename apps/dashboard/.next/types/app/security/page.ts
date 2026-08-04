@@ -1,11 +1,11 @@
-// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/src/app/security/page.tsx
-import * as entry from '../../../../src/app/security/page.js';
+// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/app/security/page.tsx
+import * as entry from '../../../../app/security/page.js';
 import type {
   ResolvingMetadata,
   ResolvingViewport,
 } from 'next/dist/lib/metadata/types/metadata-interface.js';
 
-type TEntry = typeof import('../../../../src/app/security/page.js');
+type TEntry = typeof import('../../../../app/security/page.js');
 
 type SegmentParams<T extends Object = any> =
   T extends Record<string, any>

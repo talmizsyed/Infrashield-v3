@@ -1,11 +1,11 @@
-// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/src/app/observability/page.tsx
-import * as entry from '../../../../src/app/observability/page.js';
+// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/app/observability/page.tsx
+import * as entry from '../../../../app/observability/page.js';
 import type {
   ResolvingMetadata,
   ResolvingViewport,
 } from 'next/dist/lib/metadata/types/metadata-interface.js';
 
-type TEntry = typeof import('../../../../src/app/observability/page.js');
+type TEntry = typeof import('../../../../app/observability/page.js');
 
 type SegmentParams<T extends Object = any> =
   T extends Record<string, any>
