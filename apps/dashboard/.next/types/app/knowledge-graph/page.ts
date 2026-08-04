@@ -1,11 +1,11 @@
-// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/app/knowledge-graph/page.tsx
-import * as entry from '../../../../app/knowledge-graph/page.js';
+// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/src/app/knowledge-graph/page.tsx
+import * as entry from '../../../../src/app/knowledge-graph/page.js';
 import type {
   ResolvingMetadata,
   ResolvingViewport,
 } from 'next/dist/lib/metadata/types/metadata-interface.js';
 
-type TEntry = typeof import('../../../../app/knowledge-graph/page.js');
+type TEntry = typeof import('../../../../src/app/knowledge-graph/page.js');
 
 type SegmentParams<T extends Object = any> =
   T extends Record<string, any>

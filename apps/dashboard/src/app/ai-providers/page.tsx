@@ -1,35 +1,53 @@
 import type { ReactElement } from 'react';
-import { PageShell } from '../../components/layout/page-shell';
-import { SectionCard } from '../../components/dashboard/section-card';
+import { AppShell } from '../../components/layout/app-shell';
+import { SectionCard } from '../../components/ui/section-card';
+import { MetricCard } from '../../components/ui/metric-card';
+import { HealthBadge } from '../../components/ui/health-badge';
 
 export default function AiProvidersPage(): ReactElement {
   return (
-    <PageShell
+    <AppShell
       title="AI Providers"
       description="Provider health, routing confidence, and model availability posture."
       breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'AI Providers' }]}
     >
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <SectionCard
           title="Provider readiness"
           description="Current routing health across supported providers."
         >
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
-            Provider routing remains stable, with no active degradations across the primary model
-            fleet.
+          <div className="grid gap-4 md:grid-cols-2">
+            <MetricCard
+              label="Healthy providers"
+              value="6/6"
+              detail="Primary fleet"
+              tone="positive"
+            />
+            <MetricCard label="Latency" value="118ms" detail="Median response" tone="default" />
           </div>
         </SectionCard>
         <SectionCard
           title="Routing priorities"
           description="Operational work queued for provider reliability."
         >
-          <ul className="space-y-2 text-sm text-slate-300">
-            <li>• Review failover thresholds for secondary models</li>
-            <li>• Tune load-based routing for peak latency windows</li>
-            <li>• Validate capacity reservations for critical workloads</li>
-          </ul>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+              <div>
+                <p className="text-sm font-medium text-white">Failover thresholds</p>
+                <p className="text-sm text-slate-400">Secondary models</p>
+              </div>
+              <HealthBadge label="Review" tone="warning" />
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+              <div>
+                <p className="text-sm font-medium text-white">Capacity reservations</p>
+                <p className="text-sm text-slate-400">Critical workload protection</p>
+              </div>
+              <HealthBadge label="Queued" tone="positive" />
+            </div>
+          </div>
         </SectionCard>
       </div>
-    </PageShell>
+    </AppShell>
   );
 }

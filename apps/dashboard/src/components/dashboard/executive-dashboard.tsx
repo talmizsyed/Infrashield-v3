@@ -1,15 +1,41 @@
 'use client';
 
-import type { ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Activity, AlertTriangle, BrainCircuit, Cpu, ShieldCheck } from 'lucide-react';
 import { useConsoleData } from '../../hooks/use-console-data';
+import type { DashboardWidget } from '../../services/dashboard-service';
+import { getDashboardViewModel } from '../../services/dashboard-service';
 import { OverviewGrid } from './overview-grid';
 import { SectionCard } from './section-card';
 import { StatusList } from './status-list';
 import { HealthChart } from './health-chart';
+import { DashboardWidgetCard } from './dashboard-widget-card';
 
 export function ExecutiveDashboard(): ReactElement {
   const { data, error } = useConsoleData();
+  const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
+  const [widgetError, setWidgetError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void getDashboardViewModel()
+      .then((viewModel) => {
+        if (isMounted) {
+          setWidgets(viewModel.widgets);
+          setWidgetError(null);
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setWidgetError(err instanceof Error ? err.message : 'Unable to load dashboard widgets.');
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const chartData = [
     { name: 'Mon', value: 88 },
@@ -94,6 +120,8 @@ export function ExecutiveDashboard(): ReactElement {
     },
   ];
 
+  const primaryWidgets = useMemo(() => widgets.slice(0, 4), [widgets]);
+
   return (
     <div className="space-y-6">
       <header className="rounded-3xl border border-cyan-400/20 bg-slate-900/70 p-6 shadow-[0_0_80px_rgba(34,211,238,0.12)] backdrop-blur-xl">
@@ -121,9 +149,17 @@ export function ExecutiveDashboard(): ReactElement {
 
       <OverviewGrid />
 
-      {error ? (
+      {error || widgetError ? (
         <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-          {error}
+          {error ?? widgetError}
+        </div>
+      ) : null}
+
+      {primaryWidgets.length > 0 ? (
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          {primaryWidgets.map((widget) => (
+            <DashboardWidgetCard key={widget.id} widget={widget} />
+          ))}
         </div>
       ) : null}
 

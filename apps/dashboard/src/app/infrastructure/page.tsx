@@ -1,10 +1,12 @@
 import type { ReactElement } from 'react';
-import { PageShell } from '../../components/layout/page-shell';
-import { SectionCard } from '../../components/dashboard/section-card';
+import { AppShell } from '../../components/layout/app-shell';
+import { SectionCard } from '../../components/ui/section-card';
+import { MetricCard } from '../../components/ui/metric-card';
+import { HealthBadge } from '../../components/ui/health-badge';
 
 export default function InfrastructurePage(): ReactElement {
   return (
-    <PageShell
+    <AppShell
       title="Infrastructure"
       description="Enterprise infrastructure posture, platform resilience, and environment readiness."
       breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Infrastructure' }]}
@@ -15,29 +17,43 @@ export default function InfrastructurePage(): ReactElement {
           description="Current readiness across core services and edge environments."
         >
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
-              <div className="text-xs uppercase tracking-[0.3em] text-emerald-300">
-                Availability
-              </div>
-              <div className="mt-2 text-3xl font-semibold text-white">99.94%</div>
-            </div>
-            <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4 text-sm text-cyan-100">
-              <div className="text-xs uppercase tracking-[0.3em] text-cyan-300">Replicas</div>
-              <div className="mt-2 text-3xl font-semibold text-white">128</div>
-            </div>
+            <MetricCard
+              label="Availability"
+              value="99.94%"
+              detail="Service reliability and incident posture"
+              tone="positive"
+            />
+            <MetricCard
+              label="Replicas"
+              value="128"
+              detail="Operational capacity across regions"
+              tone="default"
+            />
           </div>
         </SectionCard>
+
         <SectionCard
           title="Operational focus"
           description="Priority initiatives for the next reporting window."
         >
-          <ul className="space-y-3 text-sm text-slate-300">
-            <li>• Patch and hardening cadence for shared services</li>
-            <li>• Capacity planning for AI inference clusters</li>
-            <li>• Expansion readiness for regional failover</li>
-          </ul>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+              <div>
+                <p className="text-sm font-medium text-white">Patch cadence</p>
+                <p className="text-sm text-slate-400">Shared services hardening</p>
+              </div>
+              <HealthBadge label="On track" tone="positive" />
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+              <div>
+                <p className="text-sm font-medium text-white">Capacity planning</p>
+                <p className="text-sm text-slate-400">AI inference clustering</p>
+              </div>
+              <HealthBadge label="Planning" tone="warning" />
+            </div>
+          </div>
         </SectionCard>
       </div>
-    </PageShell>
+    </AppShell>
   );
 }

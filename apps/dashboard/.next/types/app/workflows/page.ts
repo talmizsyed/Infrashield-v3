@@ -1,11 +1,11 @@
-// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/app/workflows/page.tsx
-import * as entry from '../../../../app/workflows/page.js';
+// File: /Users/maverick/Projects/Infrashield-v3/apps/dashboard/src/app/workflows/page.tsx
+import * as entry from '../../../../src/app/workflows/page.js';
 import type {
   ResolvingMetadata,
   ResolvingViewport,
 } from 'next/dist/lib/metadata/types/metadata-interface.js';
 
-type TEntry = typeof import('../../../../app/workflows/page.js');
+type TEntry = typeof import('../../../../src/app/workflows/page.js');
 
 type SegmentParams<T extends Object = any> =
   T extends Record<string, any>

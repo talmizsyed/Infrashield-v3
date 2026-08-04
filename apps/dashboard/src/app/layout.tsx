@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactElement } from 'react';
 import './globals.css';
 import { ThemeProvider } from '../providers/theme-provider';
+import { AppStateProvider } from '../providers/app-state-provider';
 
 export const metadata: Metadata = {
   title: 'InfraShield Developer Console',
@@ -12,7 +13,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <AppStateProvider>{children}</AppStateProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
