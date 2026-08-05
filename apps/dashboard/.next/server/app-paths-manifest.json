@@ -1,8 +1,9 @@
 {
-  "/api/configuration/route": "app/api/configuration/route.js",
   "/api/dashboard/route": "app/api/dashboard/route.js",
+  "/api/configuration/route": "app/api/configuration/route.js",
   "/page": "app/page.js",
-  "/settings/page": "app/settings/page.js",
   "/agents/page": "app/agents/page.js",
-  "/knowledge-graph/page": "app/knowledge-graph/page.js"
+  "/settings/page": "app/settings/page.js",
+  "/knowledge-graph/page": "app/knowledge-graph/page.js",
+  "/workflows/page": "app/workflows/page.js"
 }

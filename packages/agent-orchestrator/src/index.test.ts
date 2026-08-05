@@ -6,14 +6,20 @@ import {
   ApprovalRequiredException,
   createDefaultAgentExecutor,
   CycleDetector,
+  ExecutionDispatcher,
   ExecutionGraph,
   DependencyResolver,
   ExecutionPlanner,
+  ExecutionQueue,
+  ExecutionSession,
   ExecutionState,
+  ExecutionScheduler,
   GraphValidator,
   GraphValidationException,
   NodeExecutionMode,
   OrchestrationStatus,
+  QueueWorker,
+  RetryPolicy,
   ScheduleTrigger,
 } from './index.js';
 
@@ -140,6 +146,102 @@ describe('ExecutionState', () => {
 
     expect(nextState.status).toBe(OrchestrationStatus.Running);
     expect(nextState.history).toEqual([OrchestrationStatus.Pending, OrchestrationStatus.Running]);
+  });
+});
+
+describe('ExecutionScheduler', () => {
+  it('queues work in FIFO order and respects delayed readiness', async () => {
+    const scheduler = new ExecutionScheduler();
+    const baseRequest = {
+      graph: {
+        id: 'graph-scheduler',
+        name: 'Scheduler graph',
+        nodes: [{ id: 'node-1', agentId: 'agent-1' }],
+      },
+      approval: { mode: ApprovalMode.Auto },
+    };
+    const sessionFactory = (workflowId: string): ExecutionSession =>
+      new ExecutionSession({
+        workflowId,
+        graphId: 'graph-scheduler',
+        correlationId: 'corr-1',
+      });
+
+    const immediate = scheduler.schedule({
+      workflowId: 'workflow-1',
+      session: sessionFactory('workflow-1'),
+      request: baseRequest as never,
+    });
+    const delayed = scheduler.schedule({
+      workflowId: 'workflow-2',
+      session: sessionFactory('workflow-2'),
+      request: {
+        ...baseRequest,
+        schedule: {
+          trigger: ScheduleTrigger.Scheduled,
+          scheduledAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      } as never,
+    });
+
+    expect(scheduler.getQueue().dequeue()?.workflowId).toBe(immediate.workflowId);
+    expect(scheduler.dequeueReady(Date.now())).toBeUndefined();
+    expect(delayed.runAt).toBeDefined();
+  });
+
+  it('cancels queued work', () => {
+    const scheduler = new ExecutionScheduler();
+    scheduler.schedule({
+      workflowId: 'workflow-cancel',
+      session: new ExecutionSession({
+        workflowId: 'workflow-cancel',
+        graphId: 'graph-scheduler',
+        correlationId: 'corr-1',
+      }),
+      request: {
+        graph: {
+          id: 'graph-scheduler',
+          name: 'Scheduler graph',
+          nodes: [{ id: 'node-1', agentId: 'agent-1' }],
+        },
+        approval: { mode: ApprovalMode.Auto },
+      } as never,
+    });
+
+    expect(scheduler.cancel('workflow-cancel')).toBe(true);
+    expect(scheduler.getQueueDepth()).toBe(0);
+  });
+});
+
+describe('Queue worker and dispatcher', () => {
+  it('retries, times out, and dispatches ready items', async () => {
+    let attempts = 0;
+    const dispatcher = new ExecutionDispatcher(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error('retry me');
+      }
+      return { ok: true };
+    });
+    const queue = new ExecutionQueue();
+    queue.enqueue({
+      workflowId: 'workflow-dispatch',
+      session: new ExecutionSession({
+        workflowId: 'workflow-dispatch',
+        graphId: 'graph-dispatch',
+        correlationId: 'corr-1',
+      }),
+      request: { graph: { id: 'graph-dispatch', name: 'Dispatch', nodes: [] } } as never,
+      trigger: ScheduleTrigger.Immediate,
+      enqueuedAt: new Date().toISOString(),
+      runAt: new Date().toISOString(),
+      retryPolicy: new RetryPolicy({ maxAttempts: 2 }),
+    });
+    const worker = new QueueWorker(queue, dispatcher);
+
+    const result = await worker.processNext();
+    expect(result?.status).toBe(OrchestrationStatus.Completed);
+    expect(result?.attempts).toBe(2);
   });
 });
 
