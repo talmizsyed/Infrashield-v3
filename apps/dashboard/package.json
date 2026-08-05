@@ -13,6 +13,7 @@
   "types": "dist/index.d.ts",
   "name": "@infrashield/dashboard",
   "dependencies": {
+    "@infrashield/agent-orchestrator": "workspace:*",
     "@infrashield/agent-runtime": "workspace:*",
     "@infrashield/platform-configuration": "workspace:*",
     "@infrashield/plugin-framework": "workspace:*",

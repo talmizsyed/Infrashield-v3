@@ -65,6 +65,9 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@infrashield/agent-orchestrator':
+        specifier: workspace:*
+        version: link:../../packages/agent-orchestrator
       '@infrashield/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
@@ -125,6 +128,15 @@ importers:
       '@infrashield/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/agent-orchestrator:
+    dependencies:
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@infrashield/governance':
+        specifier: workspace:*
+        version: link:../governance
 
   packages/agent-runtime: {}
 
