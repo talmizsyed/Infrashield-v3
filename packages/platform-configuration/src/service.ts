@@ -21,10 +21,13 @@ export class PlatformConfigurationService {
     private readonly repository: ConfigurationRepository,
     private readonly cache: ConfigurationCache<PlatformConfiguration> = new InMemoryConfigurationCache<PlatformConfiguration>(),
   ) {
-    const configuration = repository.get();
-    validatePlatformConfiguration(configuration);
+    const configuration = this.getOrBootstrapConfiguration();
+    this.cache.set(configuration);
     this.widgetRegistry = new WidgetRegistry();
     this.providerRegistry = new ProviderRegistry();
+    for (const widget of createDefaultPlatformConfiguration().widgets) {
+      this.widgetRegistry.register(widget);
+    }
     for (const widget of configuration.widgets) this.widgetRegistry.register(widget);
     for (const provider of configuration.providers) this.providerRegistry.register(provider);
   }
@@ -32,7 +35,7 @@ export class PlatformConfigurationService {
   public getConfiguration(): PlatformConfiguration {
     const cached = this.cache.get();
     if (cached) return cached;
-    const configuration = this.repository.get();
+    const configuration = this.getOrBootstrapConfiguration();
     this.cache.set(configuration);
     return configuration;
   }
@@ -61,6 +64,36 @@ export class PlatformConfigurationService {
 
   public getFeatures(): FeatureFlagConfiguration[] {
     return this.getConfiguration().featureFlags;
+  }
+
+  private getOrBootstrapConfiguration(): PlatformConfiguration {
+    const storedConfiguration = this.repository.get();
+    if (!storedConfiguration) {
+      const defaultConfiguration = createDefaultPlatformConfiguration();
+      this.repository.save(defaultConfiguration);
+      return defaultConfiguration;
+    }
+
+    const defaultWidgets = createDefaultPlatformConfiguration().widgets;
+    const widgets =
+      storedConfiguration.widgets.length > 0 ? storedConfiguration.widgets : defaultWidgets;
+    const dashboardWidgets =
+      storedConfiguration.dashboard.widgets.length > 0
+        ? storedConfiguration.dashboard.widgets
+        : widgets;
+    const configuration =
+      widgets === storedConfiguration.widgets &&
+      dashboardWidgets === storedConfiguration.dashboard.widgets
+        ? storedConfiguration
+        : {
+            ...storedConfiguration,
+            dashboard: { ...storedConfiguration.dashboard, widgets: dashboardWidgets },
+            widgets,
+          };
+
+    validatePlatformConfiguration(configuration);
+    if (configuration !== storedConfiguration) this.repository.save(configuration);
+    return configuration;
   }
 }
 

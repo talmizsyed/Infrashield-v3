@@ -65,9 +65,15 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@infrashield/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@infrashield/platform-configuration':
         specifier: workspace:*
         version: link:../../packages/platform-configuration
+      '@infrashield/plugin-framework':
+        specifier: workspace:*
+        version: link:../../packages/plugin-framework
       '@infrashield/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -119,6 +125,8 @@ importers:
       '@infrashield/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/agent-runtime: {}
 
   packages/ai-core:
     dependencies:
@@ -198,6 +206,8 @@ importers:
         version: 11.3.0
 
   packages/platform-configuration: {}
+
+  packages/plugin-framework: {}
 
   packages/runtime:
     dependencies:

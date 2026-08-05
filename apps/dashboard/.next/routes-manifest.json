@@ -13,7 +13,26 @@
     }
   ],
   "headers": [],
-  "dynamicRoutes": [],
+  "dynamicRoutes": [
+    {
+      "page": "/api/agents/status/[id]",
+      "regex": "^/api/agents/status/([^/]+?)(?:/)?$",
+      "routeKeys": { "nxtPid": "nxtPid" },
+      "namedRegex": "^/api/agents/status/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/agents/[id]",
+      "regex": "^/api/agents/([^/]+?)(?:/)?$",
+      "routeKeys": { "nxtPid": "nxtPid" },
+      "namedRegex": "^/api/agents/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/plugins/[id]",
+      "regex": "^/api/plugins/([^/]+?)(?:/)?$",
+      "routeKeys": { "nxtPid": "nxtPid" },
+      "namedRegex": "^/api/plugins/(?<nxtPid>[^/]+?)(?:/)?$"
+    }
+  ],
   "staticRoutes": [
     { "page": "/", "regex": "^/(?:/)?$", "routeKeys": {}, "namedRegex": "^/(?:/)?$" },
     {

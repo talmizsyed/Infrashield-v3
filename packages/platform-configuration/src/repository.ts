@@ -1,18 +1,18 @@
 import type { PlatformConfiguration } from './types';
 
 export interface ConfigurationRepository {
-  get(): PlatformConfiguration;
+  get(): PlatformConfiguration | undefined;
   save(configuration: PlatformConfiguration): void;
 }
 
 export class InMemoryConfigurationRepository implements ConfigurationRepository {
-  private configuration: PlatformConfiguration;
+  private configuration: PlatformConfiguration | undefined;
 
-  public constructor(initialConfiguration: PlatformConfiguration) {
+  public constructor(initialConfiguration?: PlatformConfiguration) {
     this.configuration = initialConfiguration;
   }
 
-  public get(): PlatformConfiguration {
+  public get(): PlatformConfiguration | undefined {
     return this.configuration;
   }
 

@@ -13,7 +13,9 @@
   "types": "dist/index.d.ts",
   "name": "@infrashield/dashboard",
   "dependencies": {
+    "@infrashield/agent-runtime": "workspace:*",
     "@infrashield/platform-configuration": "workspace:*",
+    "@infrashield/plugin-framework": "workspace:*",
     "@infrashield/shared": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "@types/react": "^19.2.18",

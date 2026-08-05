@@ -29,42 +29,53 @@ declare namespace __next_route_internal_types__ {
 
   type StaticRoutes =
     | `/api/configuration/dashboard`
-    | `/api/configuration/navigation`
-    | `/api/configuration/features`
     | `/api/configuration/providers`
-    | `/api/configuration`
-    | `/api/configuration/widgets`
-    | `/api/dashboard/ai-platform`
-    | `/api/dashboard/infrastructure-summary`
-    | `/api/infrastructure/databases`
-    | `/api/infrastructure/openshift`
-    | `/api/infrastructure/overview`
-    | `/api/infrastructure/servers`
-    | `/api/infrastructure/virtualization`
+    | `/api/configuration/features`
     | `/api/configuration/themes`
-    | `/api/dashboard/security`
+    | `/api/configuration/navigation`
+    | `/api/configuration/widgets`
+    | `/api/configuration`
+    | `/api/dashboard/ai-platform`
     | `/api/dashboard/platform-health`
-    | `/api/dashboard/runtime`
     | `/api/console`
-    | `/api/dashboard`
+    | `/api/dashboard/runtime`
+    | `/api/dashboard/security`
+    | `/api/infrastructure/openshift`
+    | `/api/dashboard/infrastructure-summary`
+    | `/api/plugins/disable`
+    | `/api/plugins`
+    | `/api/plugins/enable`
+    | `/api/infrastructure/virtualization`
+    | `/api/infrastructure/servers`
+    | `/api/plugins/install`
+    | `/api/infrastructure/overview`
+    | `/api/agents`
+    | `/api/agents/cancel`
+    | `/api/agents/plan`
+    | `/api/agents/run`
+    | `/api/infrastructure/databases`
     | `/api/dashboard/ai-platform`
     | `/api/dashboard/infrastructure-summary`
     | `/api/dashboard/platform-health`
     | `/api/dashboard/runtime`
     | `/api/dashboard/security`
-    | `/agents`
-    | `/infrastructure`
+    | `/api/dashboard`
     | `/governance`
-    | `/ai-providers`
-    | `/knowledge-graph`
-    | `/`
+    | `/agents`
     | `/observability`
-    | `/settings`
     | `/openshift`
-    | `/security`
+    | `/settings`
+    | `/ai-providers`
+    | `/infrastructure`
+    | `/vmware`
     | `/workflows`
-    | `/vmware`;
-  type DynamicRoutes<T extends string = string> = never;
+    | `/`
+    | `/knowledge-graph`
+    | `/security`;
+  type DynamicRoutes<T extends string = string> =
+    | `/api/plugins/${SafeSlug<T>}`
+    | `/api/agents/status/${SafeSlug<T>}`
+    | `/api/agents/${SafeSlug<T>}`;
 
   type RouteImpl<T> =
     | StaticRoutes
