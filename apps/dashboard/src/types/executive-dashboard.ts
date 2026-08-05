@@ -36,12 +36,31 @@ export interface AiPlatformData {
   agentActivity: Array<{ label: string; active: number }>;
 }
 
+export interface RecentWorkflowExecution {
+  workflowId: string;
+  status: string;
+  updatedAt: string;
+  durationMs: number | null;
+  completedNodes: number;
+  failedNodes: number;
+  pendingNodes: number;
+}
+
+export interface SchedulerHealthData {
+  status: 'healthy' | 'warning' | 'degraded';
+  detail: string;
+}
+
 export interface RuntimeData {
+  activeExecutions: number;
   runningExecutions: number;
+  runningAgents: number;
   queueDepth: number;
   failedExecutions: number;
-  averageLatency: number;
+  averageExecutionDuration: number;
+  schedulerHealth: SchedulerHealthData;
   workflowStatus: NamedMetric[];
+  recentExecutions: RecentWorkflowExecution[];
 }
 
 export interface SecurityData {

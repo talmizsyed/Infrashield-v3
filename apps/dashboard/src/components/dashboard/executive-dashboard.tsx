@@ -67,8 +67,8 @@ export function ExecutiveDashboard(): ReactElement {
   const workflowItems = runtime
     ? [
         {
-          label: 'Running executions',
-          value: runtime.runningExecutions.toString(),
+          label: 'Active executions',
+          value: runtime.activeExecutions.toString(),
           tone: 'positive' as const,
         },
         { label: 'Queue depth', value: runtime.queueDepth.toString(), tone: 'warning' as const },
@@ -78,37 +78,43 @@ export function ExecutiveDashboard(): ReactElement {
           tone: 'danger' as const,
         },
         {
-          label: 'Average latency',
-          value: `${runtime.averageLatency}ms`,
+          label: 'Average duration',
+          value: `${runtime.averageExecutionDuration}ms`,
           tone: 'default' as const,
         },
       ]
     : [];
 
-  const agentItems = aiPlatform
-    ? [
-        {
-          label: 'Active agents',
-          value: aiPlatform.activeAgents.toString(),
-          tone: 'positive' as const,
-        },
-        {
-          label: 'Running workflows',
-          value: aiPlatform.runningWorkflows.toString(),
-          tone: 'positive' as const,
-        },
-        {
-          label: 'LLM providers',
-          value: aiPlatform.llmProviders.toString(),
-          tone: 'default' as const,
-        },
-        {
-          label: 'Prompt executions',
-          value: aiPlatform.promptExecutions.toLocaleString(),
-          tone: 'default' as const,
-        },
-      ]
-    : [];
+  const agentItems =
+    runtime && aiPlatform
+      ? [
+          {
+            label: 'Running agents',
+            value: runtime.runningAgents.toString(),
+            tone: 'positive' as const,
+          },
+          {
+            label: 'Scheduler health',
+            value: runtime.schedulerHealth.detail,
+            tone:
+              runtime.schedulerHealth.status === 'degraded'
+                ? ('danger' as const)
+                : runtime.schedulerHealth.status === 'warning'
+                  ? ('warning' as const)
+                  : ('positive' as const),
+          },
+          {
+            label: 'LLM providers',
+            value: aiPlatform.llmProviders.toString(),
+            tone: 'default' as const,
+          },
+          {
+            label: 'Prompt executions',
+            value: aiPlatform.promptExecutions.toLocaleString(),
+            tone: 'default' as const,
+          },
+        ]
+      : [];
 
   const securityItems = security
     ? [
@@ -135,25 +141,7 @@ export function ExecutiveDashboard(): ReactElement {
       ]
     : [];
 
-  const activityFeed = platformHealth
-    ? [
-        {
-          title: 'Platform health',
-          detail: `${platformHealth.overallHealth}% overall health with ${platformHealth.uptime} uptime.`,
-          tone: 'positive' as const,
-        },
-        {
-          title: 'Critical alert exposure',
-          detail: `${platformHealth.criticalAlerts} critical alerts require operational attention.`,
-          tone: 'danger' as const,
-        },
-        {
-          title: 'Warning alert exposure',
-          detail: `${platformHealth.warningAlerts} warning alerts are currently being monitored.`,
-          tone: 'warning' as const,
-        },
-      ]
-    : [];
+  const activityFeed = runtime?.recentExecutions ?? [];
 
   return (
     <div className="space-y-6">
@@ -234,12 +222,18 @@ export function ExecutiveDashboard(): ReactElement {
             <div className="grid gap-4 md:grid-cols-2">
               <LiveMetric
                 label="Active agents"
-                value={aiPlatform.activeAgents.toString()}
+                value={
+                  runtime ? runtime.runningAgents.toString() : aiPlatform.activeAgents.toString()
+                }
                 icon={<ShieldCheck className="h-4 w-4 text-cyan-300" />}
               />
               <LiveMetric
                 label="Running workflows"
-                value={aiPlatform.runningWorkflows.toString()}
+                value={
+                  runtime
+                    ? runtime.activeExecutions.toString()
+                    : aiPlatform.runningWorkflows.toString()
+                }
                 icon={<Activity className="h-4 w-4 text-cyan-300" />}
               />
               <LiveMetric
@@ -292,13 +286,13 @@ export function ExecutiveDashboard(): ReactElement {
             <div className="rounded-3xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/10 via-slate-950 to-slate-900 p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm text-slate-400">Average execution latency</p>
+                  <p className="text-sm text-slate-400">Average execution duration</p>
                   <p className="mt-2 text-2xl font-semibold text-white">
-                    {runtime.averageLatency}ms
+                    {runtime.averageExecutionDuration}ms
                   </p>
                 </div>
                 <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200">
-                  {runtime.runningExecutions} running
+                  {runtime.schedulerHealth.status}
                 </div>
               </div>
               <div className="mt-5 grid gap-3 md:grid-cols-2">
@@ -346,22 +340,25 @@ export function ExecutiveDashboard(): ReactElement {
       </div>
 
       <SectionCard
-        title="Activity feed"
-        description="Live operational summary from platform health signals."
+        title="Recent workflow executions"
+        description="Latest workflow runs sourced from the orchestrator runtime."
       >
         {activityFeed.length > 0 ? (
           <div className="space-y-3">
             {activityFeed.map((event) => (
               <div
-                key={event.title}
+                key={event.workflowId}
                 className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/70 p-4"
               >
                 <div className="mt-1 rounded-full border border-cyan-400/20 bg-cyan-500/10 p-2 text-cyan-200">
                   <AlertTriangle className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="font-medium text-white">{event.title}</p>
-                  <p className="mt-1 text-sm text-slate-400">{event.detail}</p>
+                  <p className="font-medium text-white">{event.workflowId}</p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    {event.status} · {event.completedNodes} completed · {event.pendingNodes} pending
+                    {event.durationMs !== null ? ` · ${event.durationMs}ms` : ''}
+                  </p>
                 </div>
               </div>
             ))}

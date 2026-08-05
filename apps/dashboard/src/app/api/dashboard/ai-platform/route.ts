@@ -1,19 +1,25 @@
 import { NextResponse } from 'next/server';
 
+import { getRuntimeDashboardData } from '../../../../services/runtime-dashboard-service';
+
 export async function GET(): Promise<NextResponse> {
+  const runtime = getRuntimeDashboardData();
+
   return NextResponse.json({
-    activeAgents: 18,
-    runningWorkflows: 42,
+    activeAgents: runtime.runningAgents,
+    runningWorkflows: runtime.activeExecutions,
     llmProviders: 6,
     promptExecutions: 18426,
     aiResponseTime: 196,
-    agentActivity: [
-      { label: '08:00', active: 11 },
-      { label: '10:00', active: 14 },
-      { label: '12:00', active: 18 },
-      { label: '14:00', active: 16 },
-      { label: '16:00', active: 20 },
-      { label: '18:00', active: 18 },
-    ],
+    agentActivity: runtime.recentExecutions
+      .slice()
+      .reverse()
+      .map((execution) => ({
+        label: new Date(execution.updatedAt).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        active: execution.completedNodes + execution.pendingNodes,
+      })),
   });
 }

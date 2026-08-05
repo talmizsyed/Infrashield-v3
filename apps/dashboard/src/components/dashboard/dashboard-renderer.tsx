@@ -62,8 +62,8 @@ widgetRegistry.register({
   render: ({ data }) => (
     <KpiCard
       label="Runtime health"
-      value={`${data.runtime.averageLatency}ms`}
-      detail="Average execution latency"
+      value={`${data.runtime.averageExecutionDuration}ms`}
+      detail="Average execution duration"
       tone="positive"
       icon={<Activity className="h-5 w-5" />}
     />
@@ -75,8 +75,8 @@ widgetRegistry.register({
   render: ({ data }) => (
     <KpiCard
       label="Workflow status"
-      value={data.runtime.runningExecutions.toString()}
-      detail="Running executions"
+      value={data.runtime.activeExecutions.toString()}
+      detail="Active executions"
       icon={<Workflow className="h-5 w-5" />}
     />
   ),
@@ -100,8 +100,8 @@ widgetRegistry.register({
   render: ({ data }) => (
     <KpiCard
       label="Agent health"
-      value={data.aiPlatform.activeAgents.toString()}
-      detail="Active agents"
+      value={data.runtime.runningAgents.toString()}
+      detail="Running agents"
       tone="positive"
       icon={<Bot className="h-5 w-5" />}
     />

@@ -27,25 +27,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/api/dashboard/route.js"
     ],
-    "/settings/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/settings/page.js"
-    ],
-    "/agents/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/agents/page.js"
-    ],
     "/knowledge-graph/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/knowledge-graph/page.js"
     ],
-    "/workflows/page": [
+    "/agents/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/workflows/page.js"
+      "static/chunks/app/agents/page.js"
     ]
   }
 }

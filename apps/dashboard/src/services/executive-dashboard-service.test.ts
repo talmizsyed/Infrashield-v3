@@ -15,7 +15,7 @@ describe('executive dashboard service', () => {
           platformHealth: { overallHealth: 97.8 },
           infrastructureSummary: { vmwareClusters: 6 },
           aiPlatform: { activeAgents: 18 },
-          runtime: { runningExecutions: 42 },
+          runtime: { runningExecutions: 42, activeExecutions: 42 },
           security: { openVulnerabilities: 27 },
         }),
       }),
