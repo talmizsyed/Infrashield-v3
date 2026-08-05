@@ -3,6 +3,8 @@
 import type { ReactElement } from 'react';
 import { Activity, AlertTriangle, BrainCircuit, Cpu, ShieldCheck } from 'lucide-react';
 import { useExecutiveDashboardData } from '../../hooks/use-executive-dashboard-data';
+import { usePlatformConfiguration } from '../../hooks/use-platform-configuration';
+import { DashboardRenderer } from './dashboard-renderer';
 import {
   AgentActivityTimeline,
   InfrastructureInventoryChart,
@@ -11,12 +13,16 @@ import {
   WorkflowStatusDonut,
 } from './executive-charts';
 import { HealthChart } from './health-chart';
-import { OverviewGrid } from './overview-grid';
 import { SectionCard } from './section-card';
 import { StatusList } from './status-list';
 
 export function ExecutiveDashboard(): ReactElement {
   const { data, error, isLoading } = useExecutiveDashboardData();
+  const {
+    configuration,
+    error: configurationError,
+    isLoading: isConfigurationLoading,
+  } = usePlatformConfiguration();
   const platformHealth = data?.platformHealth;
   const infrastructure = data?.infrastructure;
   const aiPlatform = data?.aiPlatform;
@@ -178,11 +184,15 @@ export function ExecutiveDashboard(): ReactElement {
         </div>
       </header>
 
-      <OverviewGrid data={data} isLoading={isLoading} />
+      <DashboardRenderer
+        configuration={configuration}
+        data={data}
+        isLoading={isLoading || isConfigurationLoading}
+      />
 
-      {error ? (
+      {error || configurationError ? (
         <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
-          {error}
+          {error ?? configurationError}
         </div>
       ) : null}
 

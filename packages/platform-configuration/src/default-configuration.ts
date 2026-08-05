@@ -1,0 +1,151 @@
+import type { PlatformConfiguration } from './types';
+
+const widgets = [
+  { id: 'InfrastructureHealth', title: 'Infrastructure Health', enabled: true, order: 10 },
+  { id: 'RuntimeHealth', title: 'Runtime Health', enabled: true, order: 20 },
+  { id: 'WorkflowStatus', title: 'Workflow Status', enabled: true, order: 30 },
+  { id: 'SecurityOverview', title: 'Security Overview', enabled: true, order: 40 },
+  { id: 'AgentHealth', title: 'Agent Health', enabled: true, order: 50 },
+  { id: 'KnowledgeGraph', title: 'Knowledge Graph', enabled: true, order: 60 },
+];
+
+const infrastructureProviders = [
+  { id: 'vmware', label: 'VMware', enabled: true },
+  { id: 'openshift', label: 'OpenShift', enabled: true },
+  { id: 'oracle', label: 'Oracle', enabled: true },
+  { id: 'linux', label: 'Linux', enabled: true },
+  { id: 'windows', label: 'Windows', enabled: true },
+  { id: 'azure', label: 'Azure', enabled: true },
+  { id: 'aws', label: 'AWS', enabled: true },
+] as const;
+
+export function createDefaultPlatformConfiguration(): PlatformConfiguration {
+  return {
+    dashboard: { title: 'Executive Dashboard', widgets: widgets.map((widget) => ({ ...widget })) },
+    widgets: widgets.map((widget) => ({ ...widget })),
+    navigation: [
+      {
+        id: 'dashboard',
+        title: 'Dashboard',
+        href: '/',
+        description: 'Platform overview and operational health',
+        badge: 'Live',
+        enabled: true,
+        order: 10,
+      },
+      {
+        id: 'infrastructure',
+        title: 'Infrastructure',
+        href: '/infrastructure',
+        description: 'Cluster posture and environment health',
+        enabled: true,
+        order: 20,
+      },
+      {
+        id: 'openshift',
+        title: 'OpenShift',
+        href: '/openshift',
+        description: 'Control plane and node readiness',
+        enabled: true,
+        order: 30,
+      },
+      {
+        id: 'vmware',
+        title: 'VMware',
+        href: '/vmware',
+        description: 'Virtual infrastructure and workload health',
+        enabled: true,
+        order: 40,
+      },
+      {
+        id: 'providers',
+        title: 'AI Providers',
+        href: '/ai-providers',
+        description: 'Model health and provider routing',
+        enabled: true,
+        order: 50,
+      },
+      {
+        id: 'agents',
+        title: 'Agents',
+        href: '/agents',
+        description: 'Runtime fleet and execution status',
+        enabled: true,
+        order: 60,
+      },
+      {
+        id: 'workflows',
+        title: 'Workflow Studio',
+        href: '/workflows',
+        description: 'Execution graphs and orchestration state',
+        enabled: true,
+        order: 70,
+      },
+      {
+        id: 'knowledge',
+        title: 'Knowledge Graph',
+        href: '/knowledge-graph',
+        description: 'Context memory and retrieval topology',
+        enabled: true,
+        order: 80,
+      },
+      {
+        id: 'security',
+        title: 'Security',
+        href: '/security',
+        description: 'Threats, vulnerabilities, and posture',
+        enabled: true,
+        order: 90,
+      },
+      {
+        id: 'governance',
+        title: 'Governance',
+        href: '/governance',
+        description: 'Policies, approvals, and controls',
+        enabled: true,
+        order: 100,
+      },
+      {
+        id: 'observability',
+        title: 'Observability',
+        href: '/observability',
+        description: 'Tracing, analytics, and audit surfaces',
+        enabled: true,
+        order: 110,
+      },
+      {
+        id: 'settings',
+        title: 'Settings',
+        href: '/settings',
+        description: 'Workspace preferences and integrations',
+        enabled: true,
+        order: 120,
+      },
+    ],
+    themes: [
+      { id: 'dark', label: 'Dark', enabled: true },
+      { id: 'light', label: 'Light', enabled: true },
+      { id: 'corporate', label: 'Corporate', enabled: true },
+      { id: 'custom', label: 'Custom', enabled: true },
+    ],
+    providers: infrastructureProviders.map((provider) => ({ ...provider })),
+    aiProviders: [
+      { id: 'openai', label: 'OpenAI', enabled: true },
+      { id: 'anthropic', label: 'Anthropic', enabled: true },
+      { id: 'gemini', label: 'Gemini', enabled: true },
+    ],
+    promptTemplates: [{ id: 'operations-summary', name: 'Operations Summary', enabled: true }],
+    agentDefinitions: [{ id: 'operations-agent', name: 'Operations Agent', enabled: true }],
+    workflowDefinitions: [{ id: 'incident-response', name: 'Incident Response', enabled: true }],
+    knowledgeGraph: { enabled: true, maxRelationships: 10000 },
+    infrastructureProviders: infrastructureProviders.map((provider) => ({ ...provider })),
+    securityPolicies: [{ id: 'zero-trust-baseline', name: 'Zero Trust Baseline', enabled: true }],
+    rbac: [
+      { id: 'platform-operator', name: 'Platform Operator', permissions: ['configuration.read'] },
+    ],
+    featureFlags: [
+      { id: 'executive-dashboard', enabled: true, description: 'Enable the executive dashboard.' },
+    ],
+    notifications: [{ id: 'in-app-alerts', channel: 'in-app', enabled: true }],
+  };
+}

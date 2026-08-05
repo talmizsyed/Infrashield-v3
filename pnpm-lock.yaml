@@ -65,6 +65,9 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@infrashield/platform-configuration':
+        specifier: workspace:*
+        version: link:../../packages/platform-configuration
       '@infrashield/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -193,6 +196,8 @@ importers:
       pino-pretty:
         specifier: ^11.0.0
         version: 11.3.0
+
+  packages/platform-configuration: {}
 
   packages/runtime:
     dependencies:

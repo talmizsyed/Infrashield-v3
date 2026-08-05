@@ -28,17 +28,24 @@ declare namespace __next_route_internal_types__ {
   type OptionalCatchAllSlug<S extends string> = S extends `${string}${SearchOrHash}` ? never : S;
 
   type StaticRoutes =
+    | `/api/configuration/dashboard`
+    | `/api/configuration/navigation`
+    | `/api/configuration/features`
+    | `/api/configuration/providers`
+    | `/api/configuration`
+    | `/api/configuration/widgets`
     | `/api/dashboard/ai-platform`
-    | `/api/console`
     | `/api/dashboard/infrastructure-summary`
-    | `/api/dashboard/platform-health`
     | `/api/infrastructure/databases`
-    | `/api/dashboard/security`
+    | `/api/infrastructure/openshift`
     | `/api/infrastructure/overview`
     | `/api/infrastructure/servers`
-    | `/api/dashboard/runtime`
     | `/api/infrastructure/virtualization`
-    | `/api/infrastructure/openshift`
+    | `/api/configuration/themes`
+    | `/api/dashboard/security`
+    | `/api/dashboard/platform-health`
+    | `/api/dashboard/runtime`
+    | `/api/console`
     | `/api/dashboard`
     | `/api/dashboard/ai-platform`
     | `/api/dashboard/infrastructure-summary`
@@ -46,17 +53,17 @@ declare namespace __next_route_internal_types__ {
     | `/api/dashboard/runtime`
     | `/api/dashboard/security`
     | `/agents`
-    | `/ai-providers`
-    | `/governance`
-    | `/knowledge-graph`
-    | `/openshift`
-    | `/observability`
     | `/infrastructure`
-    | `/settings`
-    | `/vmware`
+    | `/governance`
+    | `/ai-providers`
+    | `/knowledge-graph`
     | `/`
+    | `/observability`
+    | `/settings`
+    | `/openshift`
     | `/security`
-    | `/workflows`;
+    | `/workflows`
+    | `/vmware`;
   type DynamicRoutes<T extends string = string> = never;
 
   type RouteImpl<T> =

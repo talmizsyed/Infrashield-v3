@@ -13,6 +13,7 @@
   "types": "dist/index.d.ts",
   "name": "@infrashield/dashboard",
   "dependencies": {
+    "@infrashield/platform-configuration": "workspace:*",
     "@infrashield/shared": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "@types/react": "^19.2.18",
