@@ -20,13 +20,20 @@ export class ExecutionCoordinator {
     session.appendLog('Execution started');
 
     const nodeResults: OrchestrationNodeResult[] = [];
-    const completed = new Set<string>();
+    const completed = new Set<string>(session.completedNodeIds);
     const dependencyCounts = new Map<string, number>();
     const readyQueue: string[] = [];
 
     for (const nodeId of context.plan.topologicalOrder) {
-      dependencyCounts.set(nodeId, context.plan.dependencyMap[nodeId]?.length ?? 0);
-      if ((dependencyCounts.get(nodeId) ?? 0) === 0) {
+      if (completed.has(nodeId)) {
+        continue;
+      }
+
+      const dependencyCount = (context.plan.dependencyMap[nodeId] ?? []).filter(
+        (dependencyId) => !completed.has(dependencyId),
+      ).length;
+      dependencyCounts.set(nodeId, dependencyCount);
+      if (dependencyCount === 0) {
         readyQueue.push(nodeId);
       }
     }
@@ -302,7 +309,6 @@ export class ExecutionResumeCoordinator {
         workflowId: context.workflowId,
       });
       context.setNodeOutput(nodeId, output);
-      session.completedNodeIds.push(nodeId);
     }
 
     return this.coordinator.execute(context, session);

@@ -4,14 +4,18 @@ import {
   AgentOrchestrator,
   ApprovalMode,
   ApprovalRequiredException,
+  CheckpointManager,
   createDefaultAgentExecutor,
   CycleDetector,
+  ExecutionAudit,
   ExecutionDispatcher,
   ExecutionGraph,
   DependencyResolver,
+  ExecutionHistory,
   ExecutionPlanner,
   ExecutionQueue,
   ExecutionSession,
+  ExecutionTimeline,
   ExecutionState,
   ExecutionScheduler,
   GraphValidator,
@@ -364,6 +368,26 @@ describe('AgentOrchestrator', () => {
     expect(orchestrator.getStatistics().queuedExecutions).toBeGreaterThan(0);
   });
 
+  it('cancels queued workflows', async () => {
+    const orchestrator = new AgentOrchestrator(createDefaultAgentExecutor());
+    const result = await orchestrator.run({
+      graph: baseGraph,
+      schedule: {
+        trigger: ScheduleTrigger.Scheduled,
+        scheduledAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      approval: { mode: ApprovalMode.Auto },
+    });
+
+    const cancelled = orchestrator.cancel(result.workflowId, 'Cancelled from API');
+
+    expect(cancelled.status).toBe(OrchestrationStatus.Cancelled);
+    expect(orchestrator.get(result.workflowId).status).toBe(OrchestrationStatus.Cancelled);
+    expect(orchestrator.getAudit().getWorkflowEntries(result.workflowId)).toContainEqual(
+      expect.objectContaining({ action: 'cancel' }),
+    );
+  });
+
   it('retries failed workflows', async () => {
     let attempts = 0;
     const orchestrator = new AgentOrchestrator(async (agentId) => {
@@ -393,16 +417,89 @@ describe('AgentOrchestrator', () => {
     }
   });
 
-  it('exposes workflow list, detail, history, and statistics', async () => {
-    const orchestrator = new AgentOrchestrator(createDefaultAgentExecutor());
-    const result = await orchestrator.run({
-      graph: baseGraph,
+  it('tracks execution history, audit metadata, checkpoint replay, and timeline duration', async () => {
+    const executionOrder: Array<{ readonly agentId: string; readonly action: string }> = [];
+    let failures = 0;
+    const orchestrator = new AgentOrchestrator(async (agentId, input) => {
+      executionOrder.push({ agentId, action: String(input?.action ?? 'execute') });
+      if (agentId === 'security-agent' && input?.action !== 'restore' && failures === 0) {
+        failures += 1;
+        throw new Error('Transient failure');
+      }
+      return { agentId, action: input?.action ?? 'execute' };
+    });
+
+    const firstRun = await orchestrator.run({
+      graph: {
+        ...baseGraph,
+        nodes: baseGraph.nodes.map((node) => ({
+          ...node,
+          retry: { maxAttempts: 1 },
+        })),
+      },
       approval: { mode: ApprovalMode.Auto },
     });
 
+    expect(firstRun.status).toBe(OrchestrationStatus.Failed);
+
+    const retryResult = await orchestrator.retry(firstRun.workflowId);
+    expect(retryResult.status).toBe(OrchestrationStatus.Completed);
+    expect(retryResult.checkpointId).toBeDefined();
+
     expect(orchestrator.list().length).toBeGreaterThan(0);
-    expect(orchestrator.get(result.workflowId).status).toBe(OrchestrationStatus.Completed);
-    expect(orchestrator.getHistory(result.workflowId).length).toBeGreaterThan(0);
+    expect(orchestrator.get(firstRun.workflowId).status).toBe(OrchestrationStatus.Completed);
+    expect(orchestrator.getHistory(firstRun.workflowId).length).toBeGreaterThan(0);
+    expect(orchestrator.getCheckpointManager().getLatest(firstRun.workflowId)).toBeDefined();
+    expect(orchestrator.getAudit().getWorkflowEntries(firstRun.workflowId).length).toBeGreaterThan(
+      0,
+    );
+
+    const history = new ExecutionHistory();
+    const session = new ExecutionSession({
+      workflowId: 'history-workflow',
+      graphId: 'graph-history',
+      correlationId: 'corr-history',
+    });
+    session.transition(OrchestrationStatus.Running);
+    history.recordSessionEvent(session, 'running');
+    history.recordSessionEvent(session, 'completed', { durationMs: 42 });
+
+    const timeline = history.getTimeline(session.workflowId);
+    expect(timeline.getDurationMs()).toBeGreaterThanOrEqual(0);
+    expect(timeline.getLifecycleEvents()).toHaveLength(2);
+
+    const audit = new ExecutionAudit();
+    const auditEntry = audit.record({
+      workflowId: session.workflowId,
+      correlationId: session.correlationId,
+      action: 'completed',
+      durationMs: 42,
+      details: { checkpointId: 'checkpoint-1' },
+    });
+    expect(auditEntry.correlationId).toBe(session.correlationId);
+
+    const checkpointManager = new CheckpointManager(orchestrator.getStateStore());
+    const latestCheckpoint = checkpointManager.getLatest(firstRun.workflowId);
+    expect(latestCheckpoint?.correlationId).toBeDefined();
+    expect(latestCheckpoint?.completedNodeIds.length).toBeGreaterThan(0);
+
+    const manualTimeline = new ExecutionTimeline();
+    manualTimeline.record({
+      workflowId: 'wf-timeline',
+      correlationId: 'corr-timeline',
+      event: 'running',
+      status: OrchestrationStatus.Running,
+      timestamp: '2026-08-05T10:00:00.000Z',
+    });
+    manualTimeline.record({
+      workflowId: 'wf-timeline',
+      correlationId: 'corr-timeline',
+      event: 'completed',
+      status: OrchestrationStatus.Completed,
+      timestamp: '2026-08-05T10:00:02.000Z',
+    });
+    expect(manualTimeline.getDurationMs()).toBe(2000);
+    expect(executionOrder.some((entry) => entry.action === 'restore')).toBe(true);
 
     const stats = orchestrator.getStatistics();
     expect(stats.completedExecutions).toBeGreaterThan(0);

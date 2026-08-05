@@ -1,6 +1,7 @@
 import type { Identifier } from '@infrashield/contracts';
 
 import { ExecutionApproval } from './execution-approval.js';
+import { CheckpointManager } from './checkpoint-manager.js';
 import { ExecutionAudit } from './execution-audit.js';
 import { ExecutionContext, ExecutionSession } from './execution-context.js';
 import { ExecutionCoordinator, ExecutionResumeCoordinator } from './execution-coordinator.js';
@@ -43,6 +44,7 @@ export class AgentOrchestrator {
   private readonly resumeCoordinator: ExecutionResumeCoordinator;
   private readonly scheduler = new ExecutionScheduler();
   private readonly stateStore = new ExecutionStateStore();
+  private readonly checkpoints: CheckpointManager;
   private readonly history = new ExecutionHistory();
   private readonly approval = new ExecutionApproval();
   private readonly audit = new ExecutionAudit();
@@ -50,6 +52,7 @@ export class AgentOrchestrator {
   public constructor(private readonly executor: AgentExecutorFn) {
     this.coordinator = new ExecutionCoordinator(executor);
     this.resumeCoordinator = new ExecutionResumeCoordinator(this.coordinator, executor);
+    this.checkpoints = new CheckpointManager(this.stateStore);
   }
 
   public plan(request: OrchestrationRunRequest): OrchestrationPlanResult {
@@ -70,7 +73,12 @@ export class AgentOrchestrator {
     this.stateStore.saveSession(session);
     this.stateStore.savePlan(workflowId, plan);
     this.history.recordSessionEvent(session, 'planned');
-    this.audit.record({ workflowId, action: 'plan', details: { graphId: graph.id } });
+    this.audit.record({
+      workflowId,
+      correlationId: session.correlationId,
+      action: 'plan',
+      details: { graphId: graph.id },
+    });
 
     return plan.toResult();
   }
@@ -93,7 +101,7 @@ export class AgentOrchestrator {
     this.stateStore.saveSession(session);
     this.stateStore.savePlan(workflowId, plan);
     this.stateStore.saveRequest(workflowId, request);
-    this.audit.record({ workflowId, action: 'run.requested' });
+    this.audit.record({ workflowId, correlationId, action: 'run.requested' });
 
     if (request.approval) {
       const approvalResult = await this.approval.submit({
@@ -147,7 +155,13 @@ export class AgentOrchestrator {
 
     const approvalResult = await this.approval.approve(workflowId, actorId, reason);
     this.approval.applyToSession(session, approvalResult);
-    this.audit.record({ workflowId, action: 'approve', actorId, details: { reason } });
+    this.audit.record({
+      workflowId,
+      correlationId: session.correlationId,
+      action: 'approve',
+      actorId,
+      details: { reason },
+    });
     this.history.recordSessionEvent(session, 'approved', { actorId });
 
     if (!approvalResult.approved) {
@@ -177,7 +191,7 @@ export class AgentOrchestrator {
 
     session.transition(OrchestrationStatus.Retrying);
     session.failedNodeIds.length = 0;
-    this.audit.record({ workflowId, action: 'retry' });
+    this.audit.record({ workflowId, correlationId: session.correlationId, action: 'retry' });
     this.history.recordSessionEvent(session, 'retry');
 
     const request = this.stateStore.getRequest(workflowId);
@@ -186,13 +200,70 @@ export class AgentOrchestrator {
     }
 
     const graph = new ExecutionGraph(request.graph);
+    const checkpoint = this.checkpoints.getLatest(workflowId);
+    if (checkpoint) {
+      return this.resumeFromCheckpoint(workflowId, graph, plan, request, session, checkpoint);
+    }
+
     return this.executeWorkflow(workflowId, graph, plan, request, session);
+  }
+
+  public cancel(
+    workflowId: Identifier,
+    reason = 'Workflow execution cancelled.',
+  ): OrchestrationSessionSnapshot {
+    const session = this.getSession(workflowId);
+
+    if (session.status === OrchestrationStatus.Cancelled) {
+      return this.stateStore.toSnapshot(session);
+    }
+
+    if (
+      session.status === OrchestrationStatus.Completed ||
+      session.status === OrchestrationStatus.Failed ||
+      session.status === OrchestrationStatus.RolledBack
+    ) {
+      throw new Error(`Workflow ${workflowId} cannot be cancelled from status ${session.status}`);
+    }
+
+    const cancelled = this.scheduler.cancel(workflowId, reason);
+    if (
+      !cancelled &&
+      session.status !== OrchestrationStatus.Queued &&
+      session.status !== OrchestrationStatus.AwaitingApproval &&
+      session.status !== OrchestrationStatus.Pending
+    ) {
+      throw new Error(`Workflow ${workflowId} cannot be cancelled from status ${session.status}`);
+    }
+
+    session.transition(OrchestrationStatus.Cancelled);
+    this.stateStore.saveSession(session);
+    this.stateStore.saveResult({
+      workflowId,
+      status: OrchestrationStatus.Cancelled,
+      nodeResults: Object.freeze([...session.nodeResults]),
+      startedAt: session.startedAt ?? session.createdAt,
+      completedAt: session.completedAt,
+    });
+    this.stateStore.saveOutput(workflowId, {
+      status: OrchestrationStatus.Cancelled,
+      reason,
+    });
+    this.history.recordSessionEvent(session, 'cancelled', { reason });
+    this.audit.record({
+      workflowId,
+      correlationId: session.correlationId,
+      action: 'cancel',
+      details: { reason },
+    });
+
+    return this.stateStore.toSnapshot(session);
   }
 
   public async resume(workflowId: Identifier): Promise<OrchestrationRunResult> {
     const session = this.getSession(workflowId);
     const plan = this.stateStore.getPlan(workflowId);
-    const checkpoint = this.stateStore.getLatestCheckpoint(workflowId);
+    const checkpoint = this.checkpoints.getLatest(workflowId);
     if (!plan || !checkpoint) {
       throw new Error(`No checkpoint found for workflow ${workflowId}`);
     }
@@ -204,32 +275,15 @@ export class AgentOrchestrator {
 
     const graph = new ExecutionGraph(request.graph);
 
-    const context = new ExecutionContext({
-      workflowId,
-      correlationId: session.correlationId,
-      graph,
-      plan,
-      request,
-    });
-
-    for (const [nodeId, output] of Object.entries(checkpoint.nodeOutputs)) {
-      context.setNodeOutput(nodeId, output);
-    }
-
     this.audit.record({
       workflowId,
+      correlationId: session.correlationId,
       action: 'resume',
       details: { checkpointId: checkpoint.checkpointId },
     });
     this.history.recordSessionEvent(session, 'resume');
 
-    const result = await this.resumeCoordinator.resumeFromCheckpoint(
-      context,
-      session,
-      checkpoint.completedNodeIds,
-    );
-    this.finalizeExecution(session, context, result);
-    return result;
+    return this.resumeFromCheckpoint(workflowId, graph, plan, request, session, checkpoint);
   }
 
   public list(): readonly OrchestrationSessionSnapshot[] {
@@ -300,6 +354,10 @@ export class AgentOrchestrator {
     return this.stateStore;
   }
 
+  public getCheckpointManager(): CheckpointManager {
+    return this.checkpoints;
+  }
+
   private async executeWorkflow(
     workflowId: Identifier,
     graph: ExecutionGraph,
@@ -318,10 +376,68 @@ export class AgentOrchestrator {
     session.transition(OrchestrationStatus.Running);
     this.history.recordSessionEvent(session, 'running');
 
-    const checkpoint = ExecutionCheckpoint.fromSession(context, session);
-    this.stateStore.saveCheckpoint(checkpoint);
+    const checkpoint = this.checkpoints.createCheckpoint(context, session, {
+      phase: 'running',
+    });
+    this.history.recordSessionEvent(session, 'checkpoint.created', {
+      checkpointId: checkpoint.checkpointId,
+      phase: 'running',
+    });
+    this.audit.record({
+      workflowId,
+      correlationId: session.correlationId,
+      action: 'checkpoint.created',
+      details: { checkpointId: checkpoint.checkpointId, phase: 'running' },
+    });
 
     const result = await this.coordinator.execute(context, session);
+
+    if (result.status === OrchestrationStatus.Failed) {
+      await this.coordinator.rollback(context, session, session.completedNodeIds);
+    }
+
+    return this.finalizeExecution(session, context, result);
+  }
+
+  private async resumeFromCheckpoint(
+    workflowId: Identifier,
+    graph: ExecutionGraph,
+    plan: ReturnType<ExecutionPlanner['plan']>,
+    request: OrchestrationRunRequest,
+    session: ExecutionSession,
+    checkpoint: ExecutionCheckpoint,
+  ): Promise<OrchestrationRunResult> {
+    const context = new ExecutionContext({
+      workflowId,
+      correlationId: session.correlationId,
+      graph,
+      plan,
+      request,
+    });
+
+    for (const [nodeId, output] of Object.entries(checkpoint.nodeOutputs)) {
+      context.setNodeOutput(nodeId, output);
+    }
+
+    this.history.recordSessionEvent(session, 'checkpoint.restored', {
+      checkpointId: checkpoint.checkpointId,
+      completedNodeCount: checkpoint.completedNodeIds.length,
+    });
+    this.audit.record({
+      workflowId,
+      correlationId: session.correlationId,
+      action: 'checkpoint.restored',
+      details: {
+        checkpointId: checkpoint.checkpointId,
+        completedNodeCount: checkpoint.completedNodeIds.length,
+      },
+    });
+
+    const result = await this.resumeCoordinator.resumeFromCheckpoint(
+      context,
+      session,
+      checkpoint.completedNodeIds,
+    );
 
     if (result.status === OrchestrationStatus.Failed) {
       await this.coordinator.rollback(context, session, session.completedNodeIds);
@@ -342,15 +458,39 @@ export class AgentOrchestrator {
       nodeResults: result.nodeResults,
       status: result.status,
     });
-    this.history.recordSessionEvent(session, 'completed', { status: result.status });
-    this.audit.record({
-      workflowId: result.workflowId,
-      action: 'completed',
-      details: { status: result.status, nodeCount: result.nodeResults.length },
+    this.history.recordRunResult(session, result);
+
+    const finalCheckpoint = this.checkpoints.createCheckpoint(context, session, {
+      phase: result.status,
+      nodeCount: result.nodeResults.length,
+      durationMs:
+        session.startedAt && session.completedAt
+          ? Date.parse(session.completedAt) - Date.parse(session.startedAt)
+          : undefined,
     });
 
-    const finalCheckpoint = ExecutionCheckpoint.fromSession(context, session);
-    this.stateStore.saveCheckpoint(finalCheckpoint);
+    this.history.recordSessionEvent(session, 'completed', {
+      status: result.status,
+      checkpointId: finalCheckpoint.checkpointId,
+      durationMs:
+        session.startedAt && session.completedAt
+          ? Date.parse(session.completedAt) - Date.parse(session.startedAt)
+          : undefined,
+    });
+    this.audit.record({
+      workflowId: result.workflowId,
+      correlationId: session.correlationId,
+      action: 'completed',
+      durationMs:
+        session.startedAt && session.completedAt
+          ? Date.parse(session.completedAt) - Date.parse(session.startedAt)
+          : undefined,
+      details: {
+        status: result.status,
+        nodeCount: result.nodeResults.length,
+        checkpointId: finalCheckpoint.checkpointId,
+      },
+    });
 
     return {
       ...result,

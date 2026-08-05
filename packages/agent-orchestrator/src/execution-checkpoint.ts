@@ -1,4 +1,4 @@
-import type { Identifier, TimestampString } from '@infrashield/contracts';
+import type { CorrelationId, Identifier, TimestampString } from '@infrashield/contracts';
 
 import type { ExecutionContext, ExecutionSession } from './execution-context.js';
 import { OrchestrationStatus } from './foundation.js';
@@ -6,6 +6,7 @@ import { OrchestrationStatus } from './foundation.js';
 export class ExecutionCheckpoint {
   public readonly checkpointId: Identifier;
   public readonly workflowId: Identifier;
+  public readonly correlationId: CorrelationId;
   public readonly completedNodeIds: readonly string[];
   public readonly nodeOutputs: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   public readonly status: OrchestrationStatus;
@@ -15,6 +16,7 @@ export class ExecutionCheckpoint {
   public constructor(options: {
     readonly checkpointId: Identifier;
     readonly workflowId: Identifier;
+    readonly correlationId: CorrelationId;
     readonly completedNodeIds: readonly string[];
     readonly nodeOutputs: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
     readonly status: OrchestrationStatus;
@@ -23,6 +25,7 @@ export class ExecutionCheckpoint {
   }) {
     this.checkpointId = options.checkpointId;
     this.workflowId = options.workflowId;
+    this.correlationId = options.correlationId;
     this.completedNodeIds = Object.freeze([...options.completedNodeIds]);
     this.nodeOutputs = Object.freeze({ ...options.nodeOutputs });
     this.status = options.status;
@@ -33,6 +36,7 @@ export class ExecutionCheckpoint {
   public static fromSession(
     context: ExecutionContext,
     session: ExecutionSession,
+    metadata?: Readonly<Record<string, unknown>>,
   ): ExecutionCheckpoint {
     const nodeOutputs: Record<string, Readonly<Record<string, unknown>>> = {};
     for (const [nodeId, output] of context.nodeOutputs.entries()) {
@@ -42,10 +46,14 @@ export class ExecutionCheckpoint {
     return new ExecutionCheckpoint({
       checkpointId: `${session.workflowId}-checkpoint-${Date.now()}`,
       workflowId: session.workflowId,
+      correlationId: session.correlationId,
       completedNodeIds: [...session.completedNodeIds],
       nodeOutputs,
       status: session.status,
-      metadata: { correlationId: session.correlationId },
+      metadata: {
+        correlationId: session.correlationId,
+        ...metadata,
+      },
     });
   }
 }
