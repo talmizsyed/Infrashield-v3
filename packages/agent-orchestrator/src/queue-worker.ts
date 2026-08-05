@@ -13,7 +13,7 @@ export class QueueWorker<T = unknown> {
   public async processNext(options?: {
     readonly now?: number;
     readonly signal?: AbortSignal;
-  }): Promise<ExecutionDispatchResult<T> | undefined> {
+  }): Promise<ExecutionDispatchResult | undefined> {
     const item = this.queue.dequeueReady(options?.now);
     if (!item) {
       return undefined;
@@ -25,8 +25,8 @@ export class QueueWorker<T = unknown> {
   public async drain(options?: {
     readonly now?: number;
     readonly signal?: AbortSignal;
-  }): Promise<readonly ExecutionDispatchResult<T>[]> {
-    const results: ExecutionDispatchResult<T>[] = [];
+  }): Promise<readonly ExecutionDispatchResult[]> {
+    const results: ExecutionDispatchResult[] = [];
     let result = await this.processNext(options);
     while (result) {
       results.push(result);

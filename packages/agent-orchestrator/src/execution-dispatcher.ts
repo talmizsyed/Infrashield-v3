@@ -4,13 +4,13 @@ import type { ScheduledExecution } from './execution-scheduler.js';
 import { OrchestrationStatus } from './foundation.js';
 import { RetryPolicy } from './retry-policy.js';
 
-export interface ExecutionDispatchResult<T = unknown> {
+export interface ExecutionDispatchResult {
   readonly workflowId: Identifier;
   readonly status: OrchestrationStatus;
   readonly attempts: number;
   readonly startedAt: TimestampString;
   readonly completedAt: TimestampString;
-  readonly result?: T;
+  readonly result?: unknown;
   readonly error?: string;
   readonly timedOut: boolean;
   readonly cancelled: boolean;
@@ -50,7 +50,7 @@ export class ExecutionDispatcher<T = unknown> {
   public async dispatch(
     item: ScheduledExecution,
     options?: { readonly signal?: AbortSignal; readonly now?: TimestampString },
-  ): Promise<ExecutionDispatchResult<T>> {
+  ): Promise<ExecutionDispatchResult> {
     const startedAt = new Date().toISOString();
     const signal = options?.signal;
     const timeoutMs = item.timeoutMs ?? this.timeoutMs ?? 0;
