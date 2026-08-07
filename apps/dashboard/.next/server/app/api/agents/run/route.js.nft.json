@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "files": [
+    "../../../../webpack-runtime.js",
+    "../../../../chunks/2108.js",
+    "../../../../chunks/8531.js",
+    "route_client-reference-manifest.js",
+    "../../../../../../package.json",
+    "../../../../../../../../package.json",
+    "../../../../../../../../packages/agent-runtime/package.json"
+  ]
+}

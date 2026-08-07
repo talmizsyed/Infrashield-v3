@@ -9,5 +9,9 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "dependencies": {}
+  "dependencies": {
+    "@infrashield/ai-tools": "workspace:*",
+    "@infrashield/contracts": "workspace:*",
+    "@infrashield/providers": "workspace:*"
+  }
 }

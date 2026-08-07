@@ -2,6 +2,7 @@ export * from './admin-framework';
 export * from './cache';
 export * from './dashboard-builder';
 export * from './default-configuration';
+export * from './provider-management-console';
 export * from './registry';
 export * from './repository';
 export * from './service';

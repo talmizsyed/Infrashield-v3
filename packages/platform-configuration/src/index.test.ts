@@ -8,6 +8,7 @@ import {
   createPlatformConfigurationService,
   InMemoryConfigurationRepository,
   PlatformConfigurationService,
+  ProviderManagementConsole,
   WidgetManagementService,
   validatePlatformConfiguration,
 } from './index';
@@ -324,5 +325,111 @@ describe('platform configuration', () => {
         section.widgets.some((widget) => widget.metadata.id === 'latency-map'),
       ),
     ).toBe(true);
+  });
+
+  it('supports provider registration, CRUD, capability view, health, search/filter, and connection tests', () => {
+    const consoleService = new ProviderManagementConsole({
+      configurationService: createPlatformConfigurationService(),
+    });
+
+    const registered = consoleService.registerProvider({
+      id: 'acme-llm',
+      name: 'Acme LLM',
+      label: 'Acme Large Language Model',
+      category: 'ai',
+      enabled: true,
+      metadata: {
+        description: 'Acme managed model provider.',
+        vendor: 'Acme',
+        version: '2.1.0',
+        tags: ['enterprise', 'llm'],
+        healthStatus: 'healthy',
+      },
+      configuration: {
+        endpoint: 'https://api.acme.example',
+        timeoutMs: 10_000,
+      },
+      capabilities: [
+        {
+          id: 'cap-chat',
+          name: 'chat.completions',
+          description: 'Chat completion API',
+          version: '1.0.0',
+          tags: ['chat', 'text'],
+          stability: 'stable',
+          featureFlags: { streaming: true },
+        },
+      ],
+    });
+
+    expect(registered.id).toBe('acme-llm');
+    expect(consoleService.getProvider('acme-llm')?.metadata.vendor).toBe('Acme');
+
+    const editedConfiguration = consoleService.editConfiguration('acme-llm', {
+      timeoutMs: 15_000,
+      region: 'us-east-1',
+    });
+    expect(editedConfiguration.configuration.timeoutMs).toBe(15_000);
+    expect(editedConfiguration.configuration.region).toBe('us-east-1');
+
+    const updated = consoleService.updateProvider('acme-llm', {
+      label: 'Acme LLM Production',
+      metadata: {
+        healthStatus: 'degraded',
+        tags: ['enterprise', 'production'],
+      },
+      capabilities: [
+        {
+          id: 'cap-chat',
+          name: 'chat.completions',
+          description: 'Chat completion API',
+          version: '1.1.0',
+          tags: ['chat', 'text'],
+          stability: 'stable',
+        },
+        {
+          id: 'cap-embed',
+          name: 'embeddings',
+          description: 'Embeddings API',
+          version: '1.0.0',
+          tags: ['vectors'],
+          stability: 'beta',
+        },
+      ],
+    });
+
+    expect(updated.label).toBe('Acme LLM Production');
+    expect(updated.metadata.healthStatus).toBe('degraded');
+
+    const capabilities = consoleService.viewCapabilities('acme-llm');
+    expect(capabilities.map((capability) => capability.name)).toEqual(
+      expect.arrayContaining(['chat.completions', 'embeddings']),
+    );
+
+    const healthSnapshots = consoleService.monitorHealth();
+    expect(healthSnapshots.some((snapshot) => snapshot.providerId === 'acme-llm')).toBe(true);
+    expect(consoleService.getHealthStatus('acme-llm')).toBe('degraded');
+
+    const searchResults = consoleService.listProviders({
+      search: 'acme',
+      category: 'ai',
+      enabled: true,
+      healthStatus: 'degraded',
+      capability: 'embeddings',
+      tags: ['enterprise'],
+    });
+    expect(searchResults.some((provider) => provider.id === 'acme-llm')).toBe(true);
+
+    const disabled = consoleService.disableProvider('acme-llm');
+    expect(disabled.enabled).toBe(false);
+    const enabled = consoleService.enableProvider('acme-llm');
+    expect(enabled.enabled).toBe(true);
+
+    const testResult = consoleService.testConnection('acme-llm');
+    expect(testResult.providerId).toBe('acme-llm');
+    expect(typeof testResult.latencyMs).toBe('number');
+
+    expect(consoleService.deleteProvider('acme-llm')).toBe(true);
+    expect(consoleService.getProvider('acme-llm')).toBeUndefined();
   });
 });
