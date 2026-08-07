@@ -1,0 +1,27 @@
+{
+  "name": "@infrashield/provider-certification",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@infrashield/provider-cloud": "workspace:*",
+    "@infrashield/provider-itsm": "workspace:*",
+    "@infrashield/provider-kubernetes": "workspace:*",
+    "@infrashield/provider-linux": "workspace:*",
+    "@infrashield/provider-mock": "workspace:*",
+    "@infrashield/provider-monitoring": "workspace:*",
+    "@infrashield/provider-network": "workspace:*",
+    "@infrashield/provider-openshift": "workspace:*",
+    "@infrashield/provider-oracle": "workspace:*",
+    "@infrashield/provider-storage": "workspace:*",
+    "@infrashield/provider-vmware": "workspace:*",
+    "@infrashield/provider-windows": "workspace:*",
+    "@infrashield/providers": "workspace:*"
+  }
+}

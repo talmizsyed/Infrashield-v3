@@ -309,11 +309,77 @@ importers:
 
   providers/provider-anthropic: {}
 
+  providers/provider-certification:
+    dependencies:
+      '@infrashield/provider-cloud':
+        specifier: workspace:*
+        version: link:../provider-cloud
+      '@infrashield/provider-itsm':
+        specifier: workspace:*
+        version: link:../provider-itsm
+      '@infrashield/provider-kubernetes':
+        specifier: workspace:*
+        version: link:../provider-kubernetes
+      '@infrashield/provider-linux':
+        specifier: workspace:*
+        version: link:../provider-linux
+      '@infrashield/provider-mock':
+        specifier: workspace:*
+        version: link:../provider-mock
+      '@infrashield/provider-monitoring':
+        specifier: workspace:*
+        version: link:../provider-monitoring
+      '@infrashield/provider-network':
+        specifier: workspace:*
+        version: link:../provider-network
+      '@infrashield/provider-openshift':
+        specifier: workspace:*
+        version: link:../provider-openshift
+      '@infrashield/provider-oracle':
+        specifier: workspace:*
+        version: link:../provider-oracle
+      '@infrashield/provider-storage':
+        specifier: workspace:*
+        version: link:../provider-storage
+      '@infrashield/provider-vmware':
+        specifier: workspace:*
+        version: link:../provider-vmware
+      '@infrashield/provider-windows':
+        specifier: workspace:*
+        version: link:../provider-windows
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
+  providers/provider-cloud:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
   providers/provider-deepseek: {}
 
   providers/provider-gemini: {}
 
   providers/provider-groq: {}
+
+  providers/provider-itsm:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
 
   providers/provider-kimi: {}
 
@@ -342,6 +408,18 @@ importers:
         version: link:../../packages/providers
 
   providers/provider-mock:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
+  providers/provider-monitoring:
     dependencies:
       '@infrashield/ai-tools':
         specifier: workspace:*
@@ -382,6 +460,18 @@ importers:
         version: link:../../packages/providers
 
   providers/provider-oracle:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
+  providers/provider-storage:
     dependencies:
       '@infrashield/ai-tools':
         specifier: workspace:*

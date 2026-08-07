@@ -29,26 +29,27 @@ declare namespace __next_route_internal_types__ {
 
   type StaticRoutes =
     | `/`
-    | `/ai-providers`
     | `/agents`
-    | `/api/agents`
-    | `/api/agents/cancel`
-    | `/api/agents/plan`
-    | `/api/agents/run`
-    | `/api/console`
+    | `/ai-providers`
     | `/api/configuration`
-    | `/api/configuration/features`
-    | `/api/configuration/navigation`
     | `/api/configuration/dashboard`
+    | `/api/configuration/features`
     | `/api/configuration/providers`
     | `/api/configuration/themes`
     | `/api/configuration/widgets`
+    | `/api/configuration/navigation`
+    | `/api/agents`
+    | `/api/agents/cancel`
+    | `/api/agents/run`
+    | `/api/agents/plan`
+    | `/api/dashboard`
+    | `/api/dashboard/infrastructure-summary`
+    | `/api/dashboard/ai-platform`
+    | `/api/dashboard/platform-health`
+    | `/api/dashboard/runtime`
+    | `/api/dashboard/security`
+    | `/api/console`
     | `/api/plugins`
-    | `/api/infrastructure/openshift`
-    | `/api/infrastructure/databases`
-    | `/api/infrastructure/servers`
-    | `/api/infrastructure/virtualization`
-    | `/api/infrastructure/overview`
     | `/api/plugins/disable`
     | `/api/plugins/enable`
     | `/api/plugins/install`
@@ -59,15 +60,14 @@ declare namespace __next_route_internal_types__ {
     | `/api/workflow/retry`
     | `/api/workflow/run`
     | `/api/workflows`
-    | `/api/workflows/retry`
     | `/api/workflows/cancel`
     | `/api/workflows/run`
-    | `/api/dashboard`
-    | `/api/dashboard/ai-platform`
-    | `/api/dashboard/infrastructure-summary`
-    | `/api/dashboard/platform-health`
-    | `/api/dashboard/runtime`
-    | `/api/dashboard/security`
+    | `/api/workflows/retry`
+    | `/api/infrastructure/databases`
+    | `/api/infrastructure/openshift`
+    | `/api/infrastructure/overview`
+    | `/api/infrastructure/servers`
+    | `/api/infrastructure/virtualization`
     | `/governance`
     | `/infrastructure`
     | `/knowledge-graph`
@@ -78,8 +78,8 @@ declare namespace __next_route_internal_types__ {
     | `/vmware`
     | `/workflows`;
   type DynamicRoutes<T extends string = string> =
-    | `/api/agents/${SafeSlug<T>}`
     | `/api/agents/status/${SafeSlug<T>}`
+    | `/api/agents/${SafeSlug<T>}`
     | `/api/plugins/${SafeSlug<T>}`
     | `/api/workflow/${SafeSlug<T>}`
     | `/api/workflows/${SafeSlug<T>}`
