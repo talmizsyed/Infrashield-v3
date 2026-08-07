@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AuthenticationPolicy,
+  AuthenticationResult,
+  AuthenticationValidator,
   BaseProvider,
+  CredentialStore,
   ConnectionFactory,
   ConnectionHealth,
   ConnectionPool,
   ConnectionRetryPolicy,
   ConnectionValidator,
+  type ProviderCredential,
+  ProviderAuthentication,
   ProviderConnection,
   ProviderConnectionManager,
   ProviderCapabilities,
@@ -42,6 +48,42 @@ class TestProvider extends BaseProvider<{ region: string; apiKey: string }> {
             defaultValues: { region: 'us-east-1' },
           }),
         }),
+    });
+  }
+}
+
+class UsernamePasswordAuthenticationProvider {
+  public readonly method = 'username-password' as const;
+
+  public async authenticate(
+    context: { readonly provider: { readonly manifest: { readonly id: string } } },
+    credential: ProviderCredential,
+  ): Promise<AuthenticationResult> {
+    if (credential.method !== 'username-password') {
+      return new AuthenticationResult({
+        success: false,
+        method: this.method,
+        providerId: context.provider.manifest.id,
+        message: 'Unsupported credential type for username-password provider.',
+      });
+    }
+
+    if (credential.password !== 'valid-password') {
+      return new AuthenticationResult({
+        success: false,
+        method: this.method,
+        providerId: context.provider.manifest.id,
+        principalId: credential.username,
+        message: 'Invalid username or password.',
+      });
+    }
+
+    return new AuthenticationResult({
+      success: true,
+      method: this.method,
+      providerId: context.provider.manifest.id,
+      principalId: credential.username,
+      message: 'Authenticated.',
     });
   }
 }
@@ -227,5 +269,123 @@ describe('providers sdk core', () => {
     expect(connection.status).toBe('connected');
     expect(connection.getMetrics().failureCount).toBe(1);
     expect(connection.getMetrics().connectCount).toBe(1);
+  });
+
+  it('validates supported authentication credential types', () => {
+    const validator = new AuthenticationValidator();
+
+    expect(() =>
+      validator.validateCredential({
+        method: 'username-password',
+        username: 'alice',
+        password: 'valid-password',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      validator.validateCredential({
+        method: 'api-key',
+        apiKey: 'key-1',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      validator.validateCredential({
+        method: 'token',
+        token: 'token-1',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      validator.validateCredential({
+        method: 'oauth2',
+        accessToken: 'access-1',
+        scopes: ['read:models'],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      validator.validateCredential({
+        method: 'client-certificate',
+        certificatePem: 'cert-pem',
+        privateKeyPem: 'private-key-pem',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      validator.validateCredential({
+        method: 'ssh-key',
+        privateKey: 'ssh-private-key',
+      }),
+    ).not.toThrow();
+  });
+
+  it('enforces authentication policy restrictions', () => {
+    const validator = new AuthenticationValidator();
+    const policy = new AuthenticationPolicy({
+      allowedMethods: ['oauth2'],
+      requiredScopesByMethod: { oauth2: ['read:models'] },
+    });
+
+    expect(() =>
+      validator.validatePolicy(
+        policy,
+        'oauth2',
+        {
+          method: 'oauth2',
+          accessToken: 'access-1',
+          scopes: ['read:models'],
+        },
+        ['read:models'],
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      validator.validatePolicy(
+        policy,
+        'api-key',
+        {
+          method: 'api-key',
+          apiKey: 'key-1',
+        },
+        [],
+      ),
+    ).toThrow('Authentication method is not allowed: api-key');
+  });
+
+  it('authenticates through provider authentication and credential store abstraction', async () => {
+    const provider = new TestProvider();
+    const context = await provider.createContext({ apiKey: 'secret-key' }, { actorId: 'alice' });
+    const store = new CredentialStore();
+    const authentication = new ProviderAuthentication({
+      credentialStore: store,
+    });
+    authentication.registerProvider(new UsernamePasswordAuthenticationProvider());
+
+    const authenticationContext = {
+      provider,
+      providerContext: context,
+      actorId: 'alice',
+      requestedMethod: 'username-password' as const,
+      requestedAt: new Date().toISOString(),
+    };
+
+    store.setCredential(authenticationContext, {
+      method: 'username-password',
+      username: 'alice',
+      password: 'valid-password',
+    });
+
+    const result = await authentication.authenticate({
+      provider,
+      context,
+      actorId: 'alice',
+      method: 'username-password',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.principalId).toBe('alice');
+    expect(authentication.listMethods()).toContain('username-password');
+    expect(store.removeCredential(authenticationContext, 'username-password')).toBe(true);
   });
 });
