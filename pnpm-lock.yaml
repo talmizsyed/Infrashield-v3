@@ -169,7 +169,11 @@ importers:
 
   packages/ai-security: {}
 
-  packages/ai-tools: {}
+  packages/ai-tools:
+    dependencies:
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/config:
     dependencies:
