@@ -326,6 +326,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  providers/provider-linux:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
   providers/provider-mock:
     dependencies:
       '@infrashield/ai-tools':
@@ -367,6 +379,18 @@ importers:
         version: link:../../packages/providers
 
   providers/provider-vmware:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
+  providers/provider-windows:
     dependencies:
       '@infrashield/ai-tools':
         specifier: workspace:*
