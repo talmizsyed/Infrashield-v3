@@ -4,6 +4,11 @@ import {
   AuthenticationResult,
   AuthenticationValidator,
   BaseProvider,
+  CapabilityDefinition,
+  CapabilityMetadata,
+  CapabilityResolver,
+  CapabilityValidator,
+  CapabilityVersion,
   CredentialStore,
   ConnectionFactory,
   ConnectionHealth,
@@ -12,6 +17,7 @@ import {
   ConnectionValidator,
   type ProviderCredential,
   ProviderAuthentication,
+  ProviderCapabilityRegistry,
   ProviderConnection,
   ProviderConnectionManager,
   ProviderCapabilities,
@@ -387,5 +393,117 @@ describe('providers sdk core', () => {
     expect(result.principalId).toBe('alice');
     expect(authentication.listMethods()).toContain('username-password');
     expect(store.removeCredential(authenticationContext, 'username-password')).toBe(true);
+  });
+
+  it('registers, discovers, queries, and versions provider capabilities', () => {
+    const registry = new ProviderCapabilityRegistry();
+
+    const chatV1 = new CapabilityDefinition({
+      id: 'chat-completion',
+      providerId: 'provider-test',
+      name: 'chat',
+      version: new CapabilityVersion('1.0.0'),
+      metadata: new CapabilityMetadata({
+        description: 'Chat completion capability.',
+        tags: ['chat', 'text'],
+        stability: 'stable',
+        featureFlags: { stream: true },
+      }),
+      requiresCapabilities: ['chat'],
+      requiredFeatureFlags: ['stream'],
+    });
+
+    const chatV2 = new CapabilityDefinition({
+      id: 'chat-completion',
+      providerId: 'provider-test',
+      name: 'chat',
+      version: new CapabilityVersion('2.0.0'),
+      metadata: new CapabilityMetadata({
+        description: 'Chat completion capability v2.',
+        tags: ['chat', 'text'],
+        stability: 'stable',
+        featureFlags: { stream: true, tools: true },
+      }),
+      requiresCapabilities: ['chat'],
+      requiredFeatureFlags: ['stream'],
+    });
+
+    const embeddingsExperimental = new CapabilityDefinition({
+      id: 'embeddings-next',
+      providerId: 'provider-test',
+      name: 'embeddings',
+      version: new CapabilityVersion('0.9.0'),
+      metadata: new CapabilityMetadata({
+        description: 'Next generation embeddings capability.',
+        tags: ['embeddings'],
+        stability: 'experimental',
+        featureFlags: { vector64: true },
+      }),
+      requiresCapabilities: ['embeddings'],
+    });
+
+    registry.register(chatV1);
+    registry.register(chatV2);
+    registry.register(embeddingsExperimental);
+
+    expect(registry.list()).toHaveLength(3);
+    expect(
+      registry.query({ providerId: 'provider-test', capabilityId: 'chat-completion' }),
+    ).toHaveLength(2);
+    expect(registry.discover({ providerId: 'provider-test', name: 'chat' })).toHaveLength(2);
+    expect(registry.discover({ name: 'embeddings' })).toHaveLength(0);
+    expect(registry.discover({ name: 'embeddings', includeExperimental: true })).toHaveLength(1);
+    expect(registry.getLatest('provider-test', 'chat')?.version.toString()).toBe('2.0.0');
+  });
+
+  it('validates capability compatibility and resolves latest compatible capability', () => {
+    const provider = new TestProvider();
+    const registry = new ProviderCapabilityRegistry();
+    const validator = new CapabilityValidator();
+    const resolver = new CapabilityResolver(registry, validator);
+
+    const compatible = new CapabilityDefinition({
+      id: 'chat-completion',
+      providerId: provider.manifest.id,
+      name: 'chat',
+      version: new CapabilityVersion('1.2.0'),
+      metadata: new CapabilityMetadata({
+        description: 'Compatible chat capability.',
+        featureFlags: { stream: true },
+      }),
+      requiresCapabilities: ['chat'],
+      requiredFeatureFlags: ['stream'],
+    });
+
+    const incompatible = new CapabilityDefinition({
+      id: 'chat-completion',
+      providerId: provider.manifest.id,
+      name: 'chat',
+      version: new CapabilityVersion('2.0.0'),
+      metadata: new CapabilityMetadata({
+        description: 'Incompatible chat capability.',
+        featureFlags: { stream: false },
+      }),
+      requiresCapabilities: ['chat'],
+      requiredFeatureFlags: ['stream'],
+    });
+
+    registry.register(compatible);
+    registry.register(incompatible);
+
+    const resolved = resolver.resolve(provider, {
+      name: 'chat',
+      version: new CapabilityVersion('1.2.0'),
+      requiredFeatureFlags: ['stream'],
+    });
+
+    expect(resolved.version.toString()).toBe('1.2.0');
+    expect(() =>
+      resolver.resolve(provider, {
+        name: 'chat',
+        version: new CapabilityVersion('2.0.0'),
+        requiredFeatureFlags: ['stream'],
+      }),
+    ).toThrow('Capability feature flag is disabled: stream');
   });
 });
