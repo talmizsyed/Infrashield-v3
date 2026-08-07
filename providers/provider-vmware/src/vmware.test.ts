@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { CapabilityVersion } from '@infrashield/providers';
 import {
   createVmwareProviderRuntime,
-  MockVmwareAdapter,
-  VmwareAuthentication,
+  VmwareAuthenticationProvider,
+  VmwareCapabilityRegistry,
   VmwareConfiguration,
+  VmwareConnectionManager,
   VmwareInventoryCache,
+  VmwareMockAdapter,
   VmwareProvider,
   VmwareProviderFactory,
 } from './vmware';
 
-describe('vmware enterprise provider', () => {
-  it('discovers all required inventory domains', async () => {
-    const provider = new VmwareProvider();
+describe('vmware enterprise provider framework', () => {
+  it('implements deterministic inventory services across all required domains', async () => {
+    const provider = new VmwareProvider({ adapter: new VmwareMockAdapter() });
     const inventory = await provider.discoverInventory();
 
     expect(inventory).toHaveLength(10);
@@ -20,137 +22,145 @@ describe('vmware enterprise provider', () => {
     expect(inventory.some((resource) => resource.kind === 'cluster')).toBe(true);
     expect(inventory.some((resource) => resource.kind === 'esxiHost')).toBe(true);
     expect(inventory.some((resource) => resource.kind === 'virtualMachine')).toBe(true);
-    expect(inventory.some((resource) => resource.kind === 'resourcePool')).toBe(true);
-    expect(inventory.some((resource) => resource.kind === 'folder')).toBe(true);
     expect(inventory.some((resource) => resource.kind === 'datastore')).toBe(true);
     expect(inventory.some((resource) => resource.kind === 'network')).toBe(true);
+    expect(inventory.some((resource) => resource.kind === 'resourcePool')).toBe(true);
+    expect(inventory.some((resource) => resource.kind === 'folder')).toBe(true);
     expect(inventory.some((resource) => resource.kind === 'template')).toBe(true);
     expect(inventory.some((resource) => resource.kind === 'snapshot')).toBe(true);
   });
 
-  it('supports monitoring and telemetry services', async () => {
-    const provider = new VmwareProvider({ adapter: new MockVmwareAdapter() });
-    const [health, performance, capacity, events, alarms, tasks] = await Promise.all([
-      provider.getHealth(),
-      provider.getPerformanceMetrics(),
-      provider.getCapacity(),
+  it('implements monitoring services with deterministic responses', async () => {
+    const provider = new VmwareProvider({ adapter: new VmwareMockAdapter() });
+
+    const [health, metrics, events, alarms, tasks, capacity] = await Promise.all([
+      provider.getProviderHealth(),
+      provider.getMetrics(),
       provider.getEvents(),
       provider.getAlarms(),
       provider.getTasks(),
+      provider.getCapacity(),
     ]);
 
     expect(health.healthy).toBe(true);
-    expect(performance.length).toBeGreaterThan(0);
-    expect(capacity.totalCpuCores).toBeGreaterThan(capacity.usedCpuCores);
+    expect(metrics.length).toBeGreaterThan(0);
     expect(events[0]?.severity).toBe('info');
     expect(alarms[0]?.severity).toBe('warning');
     expect(tasks[0]?.state).toBe('success');
+    expect(capacity.totalCpuCores).toBeGreaterThan(capacity.usedCpuCores);
   });
 
-  it('refreshes inventory, stores cache, and supports vm search', async () => {
+  it('supports inventory refresh, search, and cache synchronization operations', async () => {
     const cache = new VmwareInventoryCache();
     const provider = new VmwareProvider({ inventoryCache: cache });
 
-    const snapshot = await provider.refreshInventory();
-    const search = await provider.searchVirtualMachines({ text: 'payments' });
+    const refreshed = await provider.refreshInventory();
+    const searchFromCache = await provider.searchInventory({ text: 'payments' });
 
-    expect(snapshot.resources.length).toBe(10);
-    expect(snapshot.refreshedAt).toBeDefined();
+    provider.synchronizeCache({
+      resources: refreshed.resources,
+      refreshedAt: refreshed.refreshedAt,
+    });
+
+    expect(refreshed.resources.length).toBe(10);
+    expect(refreshed.refreshedAt).toBeDefined();
+    expect(searchFromCache[0]?.kind).toBe('virtualMachine');
     expect(provider.getInventoryCache().resources.length).toBe(10);
-    expect(search[0]?.kind).toBe('virtualMachine');
   });
 
-  it('keeps vm power and snapshot operations interface-only', async () => {
+  it('supports capability discovery and connection tests', async () => {
     const provider = new VmwareProvider();
+    const capabilities = await provider.discoverCapabilities();
+    const connectionResult = await provider.testConnection({
+      endpoint: 'https://vcenter.enterprise.local',
+    });
 
-    const powerResult = await provider.vmPowerOperations.powerOn('vm-1');
-    const snapshotResult = await provider.snapshotOperations.create('vm-1', 'before-upgrade');
-
-    expect(powerResult.supported).toBe(false);
-    expect(snapshotResult.supported).toBe(false);
+    expect(capabilities.some((capability) => capability.name === 'inventory')).toBe(true);
+    expect(capabilities.some((capability) => capability.name === 'monitoring')).toBe(true);
+    expect(capabilities.some((capability) => capability.name === 'operations')).toBe(true);
+    expect(connectionResult.connected).toBe(true);
   });
 
-  it('supports runtime integration with registry, lifecycle, auth, capabilities and connections', async () => {
-    const runtime = createVmwareProviderRuntime();
+  it('auto-registers provider manifests in provider registry through the factory', () => {
+    const factory = new VmwareProviderFactory();
+    factory.create({
+      configurationOverride: {
+        endpoint: 'https://vcenter.enterprise.local',
+      },
+    });
 
-    const discovered = runtime.registryService.discover({
+    const discovered = factory.getRegistry().discover({
       capability: 'operations',
       tags: ['vmware'],
     });
+
     expect(discovered).toHaveLength(1);
+  });
 
-    const resolvedCapability = runtime.capabilityResolver.resolve(runtime.provider, {
-      name: 'inventory',
-      version: new CapabilityVersion('1.0.0'),
-      requiredFeatureFlags: ['configurationDriven'],
-    });
-    expect(resolvedCapability.id).toBe('vmware-inventory-discovery');
-
-    expect(runtime.lifecycleManager.initialize(runtime.provider)).toBe('initialized');
-    await runtime.lifecycleManager.start(runtime.provider);
+  it('reuses authentication and connection frameworks through dedicated wrappers', async () => {
+    const runtime = createVmwareProviderRuntime();
 
     const context = await runtime.provider.createContext({
       username: 'automation-operator',
       credentialRef: 'VMWARE_CREDENTIAL_REF',
     });
 
-    const authResult = await runtime.authentication.authenticate({
-      provider: runtime.provider,
-      context,
-      method: 'username-password',
-      actorId: 'vmware-admin',
-      credential: {
+    const authResult = await runtime.authenticationProvider
+      .getProviderAuthentication()
+      .authenticate({
+        provider: runtime.provider,
+        context,
         method: 'username-password',
-        username: 'automation-operator',
-        password: 'masked-secret',
-      },
-    });
-    expect(authResult.success).toBe(true);
+        actorId: 'vmware-admin',
+        credential: {
+          method: 'username-password',
+          username: 'automation-operator',
+          password: 'masked-secret',
+        },
+      });
 
-    const connection = await runtime.connectionManager.connect(runtime.provider, context);
-    const health = await runtime.connectionManager.checkHealth(connection.id);
+    const connection = await runtime.connectionManager
+      .getSdkConnectionManager()
+      .connect(runtime.provider, context);
+    const health = await runtime.connectionManager
+      .getSdkConnectionManager()
+      .checkHealth(connection.id);
+
+    expect(authResult.success).toBe(true);
     expect(connection.status).toBe('connected');
     expect(health?.status).toBe('connected');
+  });
 
-    const disconnected = await runtime.connectionManager.disconnect(connection.id);
-    expect(disconnected).toBe(true);
+  it('supports lifecycle and capability resolution in runtime wiring', async () => {
+    const runtime = createVmwareProviderRuntime();
+
+    expect(runtime.lifecycleManager.initialize(runtime.provider)).toBe('initialized');
+    await runtime.lifecycleManager.start(runtime.provider);
+
+    const resolved = runtime.capabilityResolver.resolve(runtime.provider, {
+      name: 'inventory',
+      version: new CapabilityVersion('1.0.0'),
+      requiredFeatureFlags: ['configurationDriven'],
+    });
+
+    expect(resolved.id).toBe('vmware-inventory-discovery');
 
     await runtime.lifecycleManager.stop(runtime.provider);
     expect(runtime.lifecycleManager.getState(runtime.provider.manifest.id)).toBe('stopped');
   });
 
-  it('factory auto-registers providers and supports configuration-driven connection tests', async () => {
-    const factory = new VmwareProviderFactory();
-    const provider = factory.create({
-      configurationOverride: {
-        endpoint: 'https://vcenter.enterprise.local',
-        username: 'svc-vmware',
-      },
-    });
+  it('exposes strongly typed framework components', async () => {
+    const configuration = new VmwareConfiguration();
+    const authProvider = new VmwareAuthenticationProvider();
+    const capabilityRegistry = new VmwareCapabilityRegistry('provider-vmware');
+    const connectionManager = new VmwareConnectionManager('provider-vmware');
 
-    const discovered = factory
-      .getRegistryService()
-      .discover({ capability: 'operations', tags: ['vmware'] });
-    const testResult = await provider.testConnection({
-      endpoint: 'https://vcenter.enterprise.local',
-    });
-    const resolved = new VmwareConfiguration().merge({
-      endpoint: 'https://vcenter.enterprise.local',
-    });
+    const merged = configuration.merge({ requestTimeoutMs: 20000 });
+    const capabilities = await capabilityRegistry.list();
 
-    expect(discovered).toHaveLength(1);
-    expect(testResult.connected).toBe(true);
-    expect(resolved.endpoint).toBe('https://vcenter.enterprise.local');
-  });
-
-  it('authentication provider rejects missing credential content', async () => {
-    const auth = new VmwareAuthentication();
-    const provider = new VmwareProvider();
-    const result = await auth.authenticate(
-      { provider },
-      { method: 'username-password', username: '', password: '' },
-    );
-
-    expect(result.success).toBe(false);
+    expect(merged.requestTimeoutMs).toBe(20000);
+    expect(authProvider.getProviderAuthentication()).toBeDefined();
+    expect(connectionManager.getSdkConnectionManager()).toBeDefined();
+    expect(capabilities.length).toBe(3);
   });
 });

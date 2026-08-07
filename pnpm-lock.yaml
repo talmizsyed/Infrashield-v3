@@ -342,6 +342,18 @@ importers:
 
   providers/provider-openai: {}
 
+  providers/provider-openshift:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
   providers/provider-vmware:
     dependencies:
       '@infrashield/ai-tools':
