@@ -6,10 +6,16 @@ import {
   ToolCategory,
   ToolCapability,
   ToolBuilder,
+  ToolCancellation,
   ToolConfiguration,
   ToolDefinition,
   ToolExecutor,
+  ToolExecutionException,
+  ToolExecutionManager,
   ToolExecutionPolicy,
+  ToolResourceLimiter,
+  ToolSandbox,
+  ToolTimeoutManager,
   ToolFactory,
   ToolLifecycle,
   ToolMetadata,
@@ -452,5 +458,158 @@ describe('Tool SDK', () => {
 
     expect(result.status).toBe('failed');
     expect(result.error).toContain('Denied by deny-specific-tool policy');
+  });
+});
+
+describe('Tool execution isolation', () => {
+  it('executes tools in isolation and records lifecycle events and metrics', async () => {
+    const registry = new ToolRegistry();
+    registry.register(
+      new ToolDefinition({
+        id: 'isolated-tool',
+        name: 'Isolated Tool',
+        metadata: new ToolMetadata({
+          description: 'Runs in an isolated sandbox.',
+          version: '1.0.0',
+          categories: [ToolCategory.Utility],
+        }),
+        validator: new ToolValidator<{ value: string }, { echoed: string }>({
+          requiredInputFields: ['value'],
+          requiredOutputFields: ['echoed'],
+        }),
+        executor: new ToolExecutor(async (input) => ({ echoed: input.value })),
+      }),
+    );
+
+    const limiter = new ToolResourceLimiter({ maxConcurrentExecutions: 1, maxQueueDepth: 1 });
+    const manager = new ToolExecutionManager({ registry, resourceLimiter: limiter });
+    const result = await manager.execute<{ value: string }, { echoed: string }>('isolated-tool', {
+      value: 'hello',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toEqual({ echoed: 'hello' });
+    expect(result.metrics.durationMs).toBeGreaterThanOrEqual(0);
+    expect(manager.listEvents().map((event) => event.status)).toEqual([
+      'queued',
+      'started',
+      'completed',
+    ]);
+  });
+
+  it('supports cancellation and timeout management', async () => {
+    const registry = new ToolRegistry();
+    registry.register(
+      new ToolDefinition({
+        id: 'slow-tool',
+        name: 'Slow Tool',
+        metadata: new ToolMetadata({
+          description: 'Runs slowly.',
+          version: '1.0.0',
+          categories: [ToolCategory.Utility],
+          timeoutMs: 5,
+        }),
+        executor: new ToolExecutor(
+          async () =>
+            new Promise<{ done: boolean }>((resolve) => {
+              setTimeout(() => resolve({ done: true }), 20);
+            }),
+        ),
+      }),
+    );
+
+    const cancellation = new ToolCancellation();
+    const manager = new ToolExecutionManager({ registry });
+
+    const timedOut = await manager.execute<{ task: string }, { done: boolean }>('slow-tool', {
+      task: 'timeout',
+    });
+
+    cancellation.cancel('Cancelled by caller.');
+    const cancelled = await manager.execute<{ task: string }, { done: boolean }>(
+      'slow-tool',
+      { task: 'cancel' },
+      { cancellation, timeoutMs: 50 },
+    );
+
+    expect(timedOut.status).toBe('timed-out');
+    expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.error).toContain('Cancelled by caller.');
+  });
+
+  it('enforces resource limits and isolates exceptions', async () => {
+    const registry = new ToolRegistry();
+    registry.register(
+      new ToolDefinition({
+        id: 'failing-tool',
+        name: 'Failing Tool',
+        metadata: new ToolMetadata({
+          description: 'Throws during execution.',
+          version: '1.0.0',
+          categories: [ToolCategory.Security],
+        }),
+        executor: new ToolExecutor(async () => {
+          throw new ToolExecutionException('boom');
+        }),
+      }),
+    );
+    registry.register(
+      new ToolDefinition({
+        id: 'queued-tool',
+        name: 'Queued Tool',
+        metadata: new ToolMetadata({
+          description: 'Uses queue limits.',
+          version: '1.0.0',
+          categories: [ToolCategory.Utility],
+        }),
+        executor: new ToolExecutor(
+          async () =>
+            new Promise<{ ok: boolean }>((resolve) => {
+              setTimeout(() => resolve({ ok: true }), 15);
+            }),
+        ),
+      }),
+    );
+
+    const limiter = new ToolResourceLimiter({ maxConcurrentExecutions: 1, maxQueueDepth: 0 });
+    const manager = new ToolExecutionManager({ registry, resourceLimiter: limiter });
+
+    const failed = await manager.execute<{ run: boolean }, { ok: boolean }>('failing-tool', {
+      run: true,
+    });
+
+    const firstQueued = manager.execute<{ run: boolean }, { ok: boolean }>('queued-tool', {
+      run: true,
+    });
+    await expect(
+      manager.execute<{ run: boolean }, { ok: boolean }>('queued-tool', { run: true }),
+    ).rejects.toThrow('Tool execution queue limit exceeded.');
+    await firstQueued;
+
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('boom');
+    expect(limiter.snapshot().peakConcurrentExecutions).toBe(1);
+  });
+
+  it('supports direct sandbox and timeout manager usage', async () => {
+    const timeoutManager = new ToolTimeoutManager();
+    const sandbox = new ToolSandbox(timeoutManager);
+    const result = await sandbox.execute<{ ok: boolean }>({
+      executionId: 'exec-1',
+      toolId: 'sandbox-tool',
+      version: '1.0.0',
+      timeoutMs: 25,
+      resourceSnapshot: {
+        maxConcurrentExecutions: 1,
+        maxQueueDepth: 1,
+        activeExecutions: 1,
+        queuedExecutions: 0,
+        peakConcurrentExecutions: 1,
+      },
+      operation: async () => ({ ok: true }),
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.metrics.activeExecutions).toBe(1);
   });
 });

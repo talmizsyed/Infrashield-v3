@@ -4,6 +4,7 @@ import type {
   TimestampString,
   VersionString,
 } from '@infrashield/contracts';
+import type { ToolCancellation } from './tool-execution.js';
 
 import {
   ToolCategory,
@@ -36,11 +37,13 @@ export class ToolCapability {
 export interface ToolExecutionContext<
   TConfiguration extends SerializableValueObject = SerializableValueObject,
 > extends ToolGovernanceContext {
+  readonly executionId?: Identifier;
   readonly configuration?: Readonly<Partial<TConfiguration>>;
   readonly requestTimestamp?: TimestampString;
   readonly authorization?: import('./tool-governance.js').ToolAuthorization;
   readonly executionPolicy?: ToolExecutionPolicy;
   readonly audit?: ToolAuditContext;
+  readonly cancellation?: ToolCancellation;
 }
 
 export class ToolRequest<
