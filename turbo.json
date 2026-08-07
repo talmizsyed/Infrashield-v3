@@ -5,6 +5,9 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@infrashield/dashboard#build": {
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true

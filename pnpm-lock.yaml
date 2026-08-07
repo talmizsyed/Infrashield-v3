@@ -326,18 +326,33 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  providers/provider-mock:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../../packages/ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+
   providers/provider-ollama: {}
 
   providers/provider-openai: {}
 
   providers/provider-vmware:
     dependencies:
-      '@infrashield/context':
+      '@infrashield/ai-tools':
         specifier: workspace:*
-        version: link:../../packages/context
+        version: link:../../packages/ai-tools
       '@infrashield/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
 
 packages:
 

@@ -28,68 +28,63 @@ declare namespace __next_route_internal_types__ {
   type OptionalCatchAllSlug<S extends string> = S extends `${string}${SearchOrHash}` ? never : S;
 
   type StaticRoutes =
-    | `/api/configuration/dashboard`
-    | `/api/configuration/themes`
-    | `/api/configuration/features`
-    | `/api/configuration`
-    | `/api/configuration/widgets`
-    | `/api/console`
-    | `/api/dashboard/platform-health`
-    | `/api/dashboard/infrastructure-summary`
-    | `/api/configuration/navigation`
-    | `/api/configuration/providers`
-    | `/api/dashboard/security`
-    | `/api/infrastructure/servers`
-    | `/api/infrastructure/openshift`
-    | `/api/infrastructure/virtualization`
-    | `/api/plugins/enable`
-    | `/api/plugins/install`
-    | `/api/plugins/disable`
-    | `/api/plugins`
-    | `/api/workflow/history`
-    | `/api/infrastructure/databases`
-    | `/api/workflow/plan`
-    | `/api/workflow/approve`
-    | `/api/workflow`
-    | `/api/workflow/run`
-    | `/api/workflows`
-    | `/api/workflows/cancel`
-    | `/api/infrastructure/overview`
-    | `/api/workflows/retry`
-    | `/api/workflows/run`
-    | `/api/workflow/retry`
+    | `/`
+    | `/agents`
+    | `/ai-providers`
     | `/api/agents`
-    | `/api/agents/run`
     | `/api/agents/cancel`
     | `/api/agents/plan`
-    | `/api/dashboard/ai-platform`
-    | `/api/dashboard/runtime`
-    | `/api/dashboard/ai-platform`
+    | `/api/agents/run`
+    | `/api/configuration`
+    | `/api/configuration/dashboard`
+    | `/api/configuration/features`
+    | `/api/configuration/navigation`
+    | `/api/dashboard/security`
+    | `/api/configuration/providers`
+    | `/api/configuration/widgets`
+    | `/api/configuration/themes`
+    | `/api/console`
+    | `/api/infrastructure/databases`
+    | `/api/infrastructure/openshift`
+    | `/api/infrastructure/overview`
+    | `/api/infrastructure/virtualization`
+    | `/api/infrastructure/servers`
+    | `/api/dashboard`
     | `/api/dashboard/infrastructure-summary`
+    | `/api/dashboard/ai-platform`
     | `/api/dashboard/platform-health`
     | `/api/dashboard/runtime`
-    | `/api/dashboard/security`
-    | `/api/dashboard`
-    | `/ai-providers`
-    | `/agents`
-    | `/`
+    | `/api/plugins`
+    | `/api/plugins/disable`
+    | `/api/plugins/enable`
+    | `/api/plugins/install`
+    | `/api/workflow`
+    | `/api/workflow/history`
+    | `/api/workflow/approve`
+    | `/api/workflow/retry`
+    | `/api/workflow/plan`
+    | `/api/workflow/run`
+    | `/api/workflows`
+    | `/api/workflows/retry`
+    | `/api/workflows/cancel`
+    | `/api/workflows/run`
+    | `/governance`
+    | `/infrastructure`
     | `/observability`
     | `/openshift`
-    | `/governance`
-    | `/workflows`
+    | `/knowledge-graph`
     | `/security`
-    | `/infrastructure`
     | `/settings`
     | `/vmware`
-    | `/knowledge-graph`;
+    | `/workflows`;
   type DynamicRoutes<T extends string = string> =
+    | `/api/agents/${SafeSlug<T>}`
+    | `/api/agents/status/${SafeSlug<T>}`
     | `/api/plugins/${SafeSlug<T>}`
     | `/api/workflow/${SafeSlug<T>}`
-    | `/api/workflows/${SafeSlug<T>}/history`
     | `/api/workflows/${SafeSlug<T>}`
-    | `/api/workflows/${SafeSlug<T>}/status`
-    | `/api/agents/status/${SafeSlug<T>}`
-    | `/api/agents/${SafeSlug<T>}`;
+    | `/api/workflows/${SafeSlug<T>}/history`
+    | `/api/workflows/${SafeSlug<T>}/status`;
 
   type RouteImpl<T> =
     | StaticRoutes

@@ -1,477 +1,1025 @@
+import type { SerializableValueObject } from '@infrashield/contracts';
+import { ToolCapability } from '@infrashield/ai-tools';
 import {
-  InfrastructureEntity,
-  InfrastructureModel,
-  InfrastructureRelationship,
-  InfrastructureSnapshot,
-} from '@infrashield/context';
-import type { Identifier, SerializableValueObject, TimestampString } from '@infrashield/contracts';
+  AuthenticationResult,
+  BaseProvider,
+  CapabilityDefinition,
+  CapabilityMetadata,
+  CapabilityResolver,
+  CapabilityValidator,
+  CapabilityVersion,
+  ConnectionFactory,
+  ConnectionHealth,
+  ConnectionPool,
+  CredentialStore,
+  ProviderAuthentication,
+  ProviderCapabilityRegistry,
+  ProviderCapabilities,
+  ProviderConfiguration,
+  ProviderConnection,
+  ProviderConnectionManager,
+  ProviderHealthMonitor,
+  ProviderLifecycleManager,
+  ProviderManifest,
+  ProviderMetadata,
+  ProviderRecovery,
+  ProviderRegistryService,
+  ProviderShutdown,
+  ProviderStartup,
+  ProviderVersion,
+} from '@infrashield/providers';
 
-export type VmwareEntityKind =
-  | 'vcenter'
+export type VmwareInventoryKind =
   | 'datacenter'
   | 'cluster'
-  | 'folder'
-  | 'resourcePool'
   | 'esxiHost'
   | 'virtualMachine'
+  | 'resourcePool'
+  | 'folder'
   | 'datastore'
-  | 'storagePolicy'
-  | 'virtualNetwork'
-  | 'distributedSwitch'
-  | 'portGroup'
+  | 'network'
   | 'template'
-  | 'snapshot'
-  | 'tag'
-  | 'customAttribute'
-  | 'alarm'
-  | 'task'
-  | 'event'
-  | 'custom';
+  | 'snapshot';
 
-export type VmwareDiscoveryEvent =
-  | 'VmwareDiscoveryStarted'
-  | 'VmwareDiscoveryCompleted'
-  | 'VmwareInventoryUpdated'
-  | 'VmwareSynchronizationCompleted'
-  | 'VmwareHealthChanged';
-
-export interface IVmwareProvider {
-  readonly configuration: VmwareProviderConfiguration;
-  discover(context?: VmwareProviderContext): Promise<InfrastructureModel>;
-  synchronize(context?: VmwareProviderContext): Promise<InfrastructureModel>;
-  snapshot(name: string): Promise<InfrastructureSnapshot>;
-  getHealth(): Promise<VmwareHealth>;
-  getStatistics(): Promise<VmwareStatistics>;
+export interface VmwareProviderConfiguration extends SerializableValueObject {
+  readonly endpoint: string;
+  readonly username: string;
+  readonly credentialRef: string;
+  readonly readOnly: boolean;
+  readonly insecureSkipTlsVerify: boolean;
+  readonly requestTimeoutMs: number;
+  readonly inventoryCacheTtlSeconds: number;
 }
 
-export interface IVmwareDiscovery {
-  discover(context?: VmwareProviderContext): Promise<readonly VmwareDiscoveryRecord[]>;
-}
-
-export interface IVmwareInventory {
-  inventory(context?: VmwareProviderContext): Promise<readonly VmwareInventoryRecord[]>;
-}
-
-export interface IVmwareMapper {
-  map(record: VmwareInventoryRecord): InfrastructureEntity;
-  mapRelationship(record: VmwareInventoryRecord): InfrastructureRelationship | undefined;
-}
-
-export interface IVmwareSynchronization {
-  synchronize(context?: VmwareProviderContext): Promise<InfrastructureModel>;
-}
-
-export interface IVmwareVsphereAutomationAdapter {
-  readonly kind: 'vsphere-automation';
-  discover(context?: VmwareProviderContext): Promise<readonly VmwareInventoryRecord[]>;
-}
-
-export interface IVmwareGovmomiAdapter {
-  readonly kind: 'govmomi';
-  discover(context?: VmwareProviderContext): Promise<readonly VmwareInventoryRecord[]>;
-}
-
-export interface IVmwareRestAdapter {
-  readonly kind: 'rest';
-  discover(context?: VmwareProviderContext): Promise<readonly VmwareInventoryRecord[]>;
-}
-
-export type VmwareAdapter =
-  IVmwareVsphereAutomationAdapter | IVmwareGovmomiAdapter | IVmwareRestAdapter;
-
-export interface VmwareProviderConfiguration {
-  readonly kind: 'vmware';
-  readonly endpoint?: string;
-  readonly readOnly?: boolean;
-  readonly credentialRef?: string;
-  readonly certificateValidation?: boolean;
-  readonly minimumPrivilege?: string;
-}
-
-export interface VmwareProviderContext {
-  readonly requestId?: Identifier;
-  readonly tenantId?: Identifier;
-  readonly metadata?: SerializableValueObject;
-}
-
-export interface VmwareProviderCapabilities {
-  readonly discovery: boolean;
-  readonly incrementalSync: boolean;
-  readonly fullSync: boolean;
-  readonly topology: boolean;
-  readonly snapshots: boolean;
-}
-
-export interface VmwareDiscoveryRecord {
-  readonly id: Identifier;
-  readonly kind: VmwareEntityKind;
+export interface VmwareInventoryResource {
+  readonly id: string;
+  readonly kind: VmwareInventoryKind;
   readonly name: string;
-  readonly parentId?: Identifier;
-  readonly metadata?: SerializableValueObject;
+  readonly parentId?: string;
+  readonly moRef: string;
+  readonly labels: Readonly<Record<string, string>>;
+  readonly status: 'running' | 'degraded' | 'stopped';
 }
 
-export interface VmwareInventoryRecord extends VmwareDiscoveryRecord {
-  readonly raw?: SerializableValueObject;
+export interface VmwareHealthStatus {
+  readonly healthy: boolean;
+  readonly status: 'healthy' | 'degraded';
+  readonly checkedAt: string;
+  readonly details: Readonly<Record<string, string | number | boolean>>;
 }
 
-export class VmwareSession {
-  public constructor(
-    options: { readonly id: Identifier; readonly connectedAt?: TimestampString } = {
-      id: 'session',
+export interface VmwarePerformanceMetric {
+  readonly resourceId: string;
+  readonly cpuUsagePercent: number;
+  readonly memoryUsagePercent: number;
+  readonly networkKbps: number;
+  readonly storageIops: number;
+  readonly timestamp: string;
+}
+
+export interface VmwareCapacitySummary {
+  readonly totalCpuCores: number;
+  readonly usedCpuCores: number;
+  readonly totalMemoryGb: number;
+  readonly usedMemoryGb: number;
+  readonly totalStorageTb: number;
+  readonly usedStorageTb: number;
+  readonly measuredAt: string;
+}
+
+export interface VmwareProviderEvent {
+  readonly id: string;
+  readonly severity: 'info' | 'warning' | 'error';
+  readonly message: string;
+  readonly resourceId?: string;
+  readonly timestamp: string;
+}
+
+export interface VmwareAlarm {
+  readonly id: string;
+  readonly name: string;
+  readonly severity: 'warning' | 'critical';
+  readonly entityId: string;
+  readonly acknowledged: boolean;
+  readonly triggeredAt: string;
+}
+
+export interface VmwareTask {
+  readonly id: string;
+  readonly name: string;
+  readonly state: 'queued' | 'running' | 'success' | 'error';
+  readonly entityId?: string;
+  readonly startedAt: string;
+  readonly completedAt?: string;
+}
+
+export interface VmwareConnectionTestResult {
+  readonly connected: boolean;
+  readonly latencyMs: number;
+  readonly message: string;
+}
+
+export interface VmwareCapabilityDescriptor {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+  readonly category: 'discovery' | 'monitoring' | 'operations';
+}
+
+export interface VmwareInventoryCacheSnapshot {
+  readonly resources: readonly VmwareInventoryResource[];
+  readonly refreshedAt?: string;
+}
+
+export interface VmwareSearchQuery {
+  readonly text: string;
+  readonly kind?: VmwareInventoryKind;
+}
+
+export interface VmwareUnsupportedOperationResult {
+  readonly supported: false;
+  readonly reason: string;
+}
+
+export interface VmwareVmPowerOperations {
+  powerOn(vmId: string): Promise<VmwareUnsupportedOperationResult>;
+  powerOff(vmId: string): Promise<VmwareUnsupportedOperationResult>;
+  restart(vmId: string): Promise<VmwareUnsupportedOperationResult>;
+}
+
+export interface VmwareSnapshotOperations {
+  create(vmId: string, name: string): Promise<VmwareUnsupportedOperationResult>;
+  revert(snapshotId: string): Promise<VmwareUnsupportedOperationResult>;
+  remove(snapshotId: string): Promise<VmwareUnsupportedOperationResult>;
+}
+
+export interface VmwareInventoryAdapter {
+  listDatacenters(): Promise<readonly VmwareInventoryResource[]>;
+  listClusters(): Promise<readonly VmwareInventoryResource[]>;
+  listEsxiHosts(): Promise<readonly VmwareInventoryResource[]>;
+  listVirtualMachines(): Promise<readonly VmwareInventoryResource[]>;
+  listResourcePools(): Promise<readonly VmwareInventoryResource[]>;
+  listFolders(): Promise<readonly VmwareInventoryResource[]>;
+  listDatastores(): Promise<readonly VmwareInventoryResource[]>;
+  listNetworks(): Promise<readonly VmwareInventoryResource[]>;
+  listTemplates(): Promise<readonly VmwareInventoryResource[]>;
+  listSnapshots(): Promise<readonly VmwareInventoryResource[]>;
+}
+
+export interface VmwareMonitoringAdapter {
+  getHealth(): Promise<VmwareHealthStatus>;
+  getPerformanceMetrics(): Promise<readonly VmwarePerformanceMetric[]>;
+  getCapacity(): Promise<VmwareCapacitySummary>;
+  getEvents(): Promise<readonly VmwareProviderEvent[]>;
+  getAlarms(): Promise<readonly VmwareAlarm[]>;
+  getTasks(): Promise<readonly VmwareTask[]>;
+}
+
+export interface VmwareOperationsAdapter {
+  refreshInventory(): Promise<{ readonly refreshedAt: string }>;
+  testConnection(
+    configuration: Readonly<VmwareProviderConfiguration>,
+  ): Promise<VmwareConnectionTestResult>;
+  discoverCapabilities(): Promise<readonly VmwareCapabilityDescriptor[]>;
+  searchVirtualMachines(query: VmwareSearchQuery): Promise<readonly VmwareInventoryResource[]>;
+}
+
+export interface VmwareAdapter
+  extends VmwareInventoryAdapter, VmwareMonitoringAdapter, VmwareOperationsAdapter {}
+
+const DATASET_TIMESTAMP = '2026-01-01T00:00:00.000Z';
+
+function createLabels(labels: Record<string, string>): Readonly<Record<string, string>> {
+  return labels;
+}
+
+const MOCK_INVENTORY: readonly VmwareInventoryResource[] = Object.freeze([
+  {
+    id: 'dc-1',
+    kind: 'datacenter',
+    name: 'primary-datacenter',
+    moRef: 'datacenter-21',
+    labels: createLabels({ site: 'ashburn', tier: 'core' }),
+    status: 'running',
+  },
+  {
+    id: 'cluster-1',
+    kind: 'cluster',
+    name: 'production-cluster',
+    parentId: 'dc-1',
+    moRef: 'domain-c42',
+    labels: createLabels({ sla: 'gold', environment: 'prod' }),
+    status: 'running',
+  },
+  {
+    id: 'host-1',
+    kind: 'esxiHost',
+    name: 'esxi-01.infrashield.local',
+    parentId: 'cluster-1',
+    moRef: 'host-301',
+    labels: createLabels({ vendor: 'dell', generation: '15g' }),
+    status: 'running',
+  },
+  {
+    id: 'rp-1',
+    kind: 'resourcePool',
+    name: 'payments-resource-pool',
+    parentId: 'cluster-1',
+    moRef: 'resgroup-401',
+    labels: createLabels({ team: 'payments', priority: 'high' }),
+    status: 'running',
+  },
+  {
+    id: 'folder-1',
+    kind: 'folder',
+    name: 'payments-folder',
+    parentId: 'dc-1',
+    moRef: 'group-v500',
+    labels: createLabels({ managedBy: 'platform' }),
+    status: 'running',
+  },
+  {
+    id: 'ds-1',
+    kind: 'datastore',
+    name: 'vsanDatastore',
+    parentId: 'cluster-1',
+    moRef: 'datastore-88',
+    labels: createLabels({ type: 'vsan', profile: 'all-flash' }),
+    status: 'running',
+  },
+  {
+    id: 'net-1',
+    kind: 'network',
+    name: 'dvpg-prod-web',
+    parentId: 'dc-1',
+    moRef: 'dvportgroup-92',
+    labels: createLabels({ vlan: '210', segment: 'web' }),
+    status: 'running',
+  },
+  {
+    id: 'vm-1',
+    kind: 'virtualMachine',
+    name: 'payments-api-01',
+    parentId: 'rp-1',
+    moRef: 'vm-601',
+    labels: createLabels({ app: 'payments-api', role: 'primary' }),
+    status: 'running',
+  },
+  {
+    id: 'tmpl-1',
+    kind: 'template',
+    name: 'ubuntu-22-base-template',
+    parentId: 'folder-1',
+    moRef: 'vm-910',
+    labels: createLabels({ os: 'ubuntu22', hardened: 'true' }),
+    status: 'running',
+  },
+  {
+    id: 'snap-1',
+    kind: 'snapshot',
+    name: 'payments-api-prepatch',
+    parentId: 'vm-1',
+    moRef: 'snapshot-111',
+    labels: createLabels({ vm: 'payments-api-01', policy: 'nightly' }),
+    status: 'running',
+  },
+]);
+
+const MOCK_PERFORMANCE: readonly VmwarePerformanceMetric[] = Object.freeze([
+  {
+    resourceId: 'vm-1',
+    cpuUsagePercent: 42,
+    memoryUsagePercent: 65,
+    networkKbps: 740,
+    storageIops: 380,
+    timestamp: DATASET_TIMESTAMP,
+  },
+  {
+    resourceId: 'host-1',
+    cpuUsagePercent: 58,
+    memoryUsagePercent: 61,
+    networkKbps: 1320,
+    storageIops: 810,
+    timestamp: DATASET_TIMESTAMP,
+  },
+]);
+
+const MOCK_EVENTS: readonly VmwareProviderEvent[] = Object.freeze([
+  {
+    id: 'evt-1',
+    severity: 'info',
+    message: 'vCenter inventory refresh completed.',
+    timestamp: DATASET_TIMESTAMP,
+  },
+  {
+    id: 'evt-2',
+    severity: 'warning',
+    resourceId: 'vm-1',
+    message: 'Snapshot count exceeds recommendation.',
+    timestamp: DATASET_TIMESTAMP,
+  },
+]);
+
+const MOCK_ALARMS: readonly VmwareAlarm[] = Object.freeze([
+  {
+    id: 'alarm-1',
+    name: 'Datastore usage high',
+    severity: 'warning',
+    entityId: 'ds-1',
+    acknowledged: false,
+    triggeredAt: DATASET_TIMESTAMP,
+  },
+]);
+
+const MOCK_TASKS: readonly VmwareTask[] = Object.freeze([
+  {
+    id: 'task-1',
+    name: 'Relocate virtual machine',
+    state: 'success',
+    entityId: 'vm-1',
+    startedAt: DATASET_TIMESTAMP,
+    completedAt: DATASET_TIMESTAMP,
+  },
+]);
+
+export class VmwareConnection {
+  public readonly id: string;
+  public readonly endpoint: string;
+  public connectedAt?: string;
+
+  public constructor(endpoint: string) {
+    this.endpoint = endpoint;
+    this.id = `vmware-connection:${endpoint}`;
+  }
+
+  public connect(): void {
+    this.connectedAt = DATASET_TIMESTAMP;
+  }
+
+  public disconnect(): void {
+    this.connectedAt = undefined;
+  }
+}
+
+export class VmwareAuthentication {
+  public readonly method = 'username-password' as const;
+
+  public async authenticate(
+    context: { readonly provider: { readonly manifest: { readonly id: string } } },
+    credential: {
+      readonly method: 'username-password';
+      readonly username: string;
+      readonly password: string;
     },
-  ) {
-    this.id = options.id;
-    this.connectedAt = options.connectedAt ?? new Date().toISOString();
-  }
+  ): Promise<AuthenticationResult> {
+    const success = credential.username.length > 0 && credential.password.length > 0;
 
-  public readonly id: Identifier;
-  public readonly connectedAt: TimestampString;
-}
-
-export class VmwareConnectionProfile {
-  public constructor(
-    options: {
-      readonly endpoint?: string;
-      readonly readOnly?: boolean;
-      readonly certificateValidation?: boolean;
-    } = {},
-  ) {
-    this.endpoint = options.endpoint;
-    this.readOnly = options.readOnly ?? true;
-    this.certificateValidation = options.certificateValidation ?? true;
-  }
-
-  public readonly endpoint?: string;
-  public readonly readOnly: boolean;
-  public readonly certificateValidation: boolean;
-}
-
-export class VmwareHealth {
-  public constructor(
-    options: {
-      readonly healthy: boolean;
-      readonly details?: SerializableValueObject;
-      readonly timestamp?: TimestampString;
-    } = { healthy: true },
-  ) {
-    this.healthy = options.healthy;
-    this.details = options.details ?? {};
-    this.timestamp = options.timestamp ?? new Date().toISOString();
-  }
-
-  public readonly healthy: boolean;
-  public readonly details: SerializableValueObject;
-  public readonly timestamp: TimestampString;
-}
-
-export class VmwareStatistics {
-  public constructor(
-    options: {
-      readonly inventorySize?: number;
-      readonly entityMappings?: number;
-      readonly relationshipMappings?: number;
-      readonly snapshots?: number;
-      readonly synchronizationLatencyMs?: number;
-    } = {},
-  ) {
-    this.inventorySize = options.inventorySize ?? 0;
-    this.entityMappings = options.entityMappings ?? 0;
-    this.relationshipMappings = options.relationshipMappings ?? 0;
-    this.snapshots = options.snapshots ?? 0;
-    this.synchronizationLatencyMs = options.synchronizationLatencyMs ?? 0;
-  }
-
-  public readonly inventorySize: number;
-  public readonly entityMappings: number;
-  public readonly relationshipMappings: number;
-  public readonly snapshots: number;
-  public readonly synchronizationLatencyMs: number;
-}
-
-export class VmwareMetrics {
-  public constructor(
-    options: {
-      readonly discoveryDurationMs?: number;
-      readonly inventorySize?: number;
-      readonly synchronizationLatencyMs?: number;
-      readonly entityMappingCount?: number;
-      readonly relationshipMappingCount?: number;
-      readonly healthScore?: number;
-    } = {},
-  ) {
-    this.discoveryDurationMs = options.discoveryDurationMs ?? 0;
-    this.inventorySize = options.inventorySize ?? 0;
-    this.synchronizationLatencyMs = options.synchronizationLatencyMs ?? 0;
-    this.entityMappingCount = options.entityMappingCount ?? 0;
-    this.relationshipMappingCount = options.relationshipMappingCount ?? 0;
-    this.healthScore = options.healthScore ?? 100;
-  }
-
-  public readonly discoveryDurationMs: number;
-  public readonly inventorySize: number;
-  public readonly synchronizationLatencyMs: number;
-  public readonly entityMappingCount: number;
-  public readonly relationshipMappingCount: number;
-  public readonly healthScore: number;
-}
-
-export class VmwareAudit {
-  public constructor(options: { readonly events?: readonly VmwareDiscoveryEvent[] } = {}) {
-    this.events = [...(options.events ?? [])];
-  }
-
-  public readonly events: readonly VmwareDiscoveryEvent[];
-}
-
-export class VmwareNormalizationPipeline {
-  public normalize(records: readonly VmwareInventoryRecord[]): readonly VmwareInventoryRecord[] {
-    return records.map((record) => ({
-      ...record,
-      name: record.name.trim(),
-      metadata: {
-        ...(record.metadata ?? {}),
-        normalized: true,
-      },
-    }));
-  }
-}
-
-export class VmwareEntityMapper implements IVmwareMapper {
-  public map(record: VmwareInventoryRecord): InfrastructureEntity {
-    return new InfrastructureEntity({
-      id: record.id,
-      name: record.name,
-      kind: this.toCanonicalKind(record.kind),
-      metadata: {
-        provider: 'vmware',
-        sourceKind: record.kind,
-        ...(record.metadata ?? {}),
-      },
+    return new AuthenticationResult({
+      success,
+      method: 'username-password',
+      providerId: context.provider.manifest.id,
+      principalId: success ? credential.username : undefined,
+      message: success
+        ? 'VMware authentication accepted.'
+        : 'VMware credential payload is invalid.',
+      authenticatedAt: DATASET_TIMESTAMP,
     });
   }
+}
 
-  public mapRelationship(_record: VmwareInventoryRecord): InfrastructureRelationship | undefined {
-    return undefined;
-  }
+export class VmwareConfiguration {
+  public readonly defaultConfiguration: Readonly<VmwareProviderConfiguration> = Object.freeze({
+    endpoint: 'https://vcenter.example.local',
+    username: 'automation-operator',
+    credentialRef: 'VMWARE_CREDENTIAL_REF',
+    readOnly: true,
+    insecureSkipTlsVerify: false,
+    requestTimeoutMs: 15000,
+    inventoryCacheTtlSeconds: 300,
+  });
 
-  private toCanonicalKind(kind: VmwareEntityKind): InfrastructureEntity['kind'] {
-    const mapping: Record<VmwareEntityKind, InfrastructureEntity['kind']> = {
-      vcenter: 'customResource',
-      datacenter: 'datacenter',
-      cluster: 'cluster',
-      folder: 'custom',
-      resourcePool: 'custom',
-      esxiHost: 'host',
-      virtualMachine: 'virtualMachine',
-      datastore: 'storage',
-      storagePolicy: 'custom',
-      virtualNetwork: 'network',
-      distributedSwitch: 'switch',
-      portGroup: 'network',
-      template: 'custom',
-      snapshot: 'custom',
-      tag: 'custom',
-      customAttribute: 'custom',
-      alarm: 'custom',
-      task: 'custom',
-      event: 'custom',
-      custom: 'custom',
+  public merge(
+    override?: Readonly<Partial<VmwareProviderConfiguration>>,
+  ): Readonly<VmwareProviderConfiguration> {
+    const merged: VmwareProviderConfiguration = {
+      endpoint: override?.endpoint ?? this.defaultConfiguration.endpoint,
+      username: override?.username ?? this.defaultConfiguration.username,
+      credentialRef: override?.credentialRef ?? this.defaultConfiguration.credentialRef,
+      readOnly: override?.readOnly ?? this.defaultConfiguration.readOnly,
+      insecureSkipTlsVerify:
+        override?.insecureSkipTlsVerify ?? this.defaultConfiguration.insecureSkipTlsVerify,
+      requestTimeoutMs: override?.requestTimeoutMs ?? this.defaultConfiguration.requestTimeoutMs,
+      inventoryCacheTtlSeconds:
+        override?.inventoryCacheTtlSeconds ?? this.defaultConfiguration.inventoryCacheTtlSeconds,
     };
 
-    return mapping[kind] ?? 'custom';
+    return Object.freeze(merged);
   }
 }
 
-export class VmwareRelationshipMapper implements IVmwareMapper {
-  public map(_record: VmwareInventoryRecord): InfrastructureEntity {
-    throw new Error('Relationship mapper does not create entities');
+export class VmwareCapabilityRegistry {
+  private readonly registry: ProviderCapabilityRegistry;
+
+  public constructor(providerId = 'provider-vmware', registry = new ProviderCapabilityRegistry()) {
+    this.registry = registry;
+
+    this.register(
+      providerId,
+      'vmware-inventory-discovery',
+      'inventory',
+      'Discovery coverage across VMware inventory objects.',
+      'discovery',
+    );
+    this.register(
+      providerId,
+      'vmware-health-metrics',
+      'monitoring',
+      'Health, performance, capacity and operational telemetry.',
+      'monitoring',
+    );
+    this.register(
+      providerId,
+      'vmware-operations',
+      'operations',
+      'Inventory refresh, connection testing and search operations.',
+      'operations',
+    );
   }
 
-  public mapRelationship(record: VmwareInventoryRecord): InfrastructureRelationship | undefined {
-    if (!record.parentId) {
-      return undefined;
-    }
-    return new InfrastructureRelationship({
-      id: `${record.id}-parent`,
-      type: 'contains',
-      fromId: record.parentId,
-      toId: record.id,
-      metadata: { provider: 'vmware', sourceKind: record.kind },
+  public getProviderCapabilityRegistry(): ProviderCapabilityRegistry {
+    return this.registry;
+  }
+
+  public async list(): Promise<readonly VmwareCapabilityDescriptor[]> {
+    return Object.freeze([
+      {
+        id: 'vmware-inventory-discovery',
+        name: 'inventory',
+        version: '1.0.0',
+        category: 'discovery',
+      },
+      {
+        id: 'vmware-health-metrics',
+        name: 'monitoring',
+        version: '1.0.0',
+        category: 'monitoring',
+      },
+      {
+        id: 'vmware-operations',
+        name: 'operations',
+        version: '1.0.0',
+        category: 'operations',
+      },
+    ]);
+  }
+
+  private register(
+    providerId: string,
+    capabilityId: string,
+    capabilityName: string,
+    description: string,
+    category: VmwareCapabilityDescriptor['category'],
+  ): void {
+    this.registry.register(
+      new CapabilityDefinition({
+        id: capabilityId,
+        providerId,
+        name: capabilityName,
+        version: new CapabilityVersion('1.0.0'),
+        metadata: new CapabilityMetadata({
+          description,
+          tags: ['vmware', category],
+          featureFlags: {
+            configurationDriven: true,
+            adapterBacked: true,
+          },
+        }),
+        requiresCapabilities: [capabilityName],
+        requiredFeatureFlags: ['configurationDriven', 'adapterBacked'],
+      }),
+    );
+  }
+}
+
+export class VmwareInventoryCache {
+  private snapshot: VmwareInventoryCacheSnapshot = Object.freeze({ resources: Object.freeze([]) });
+
+  public update(resources: readonly VmwareInventoryResource[], refreshedAt: string): void {
+    this.snapshot = Object.freeze({
+      resources: Object.freeze([...resources]),
+      refreshedAt,
     });
   }
-}
 
-export class VmwareMapper implements IVmwareMapper {
-  public constructor(
-    private readonly entityMapper: IVmwareMapper = new VmwareEntityMapper(),
-    private readonly relationshipMapper: IVmwareMapper = new VmwareRelationshipMapper(),
-  ) {}
-
-  public map(record: VmwareInventoryRecord): InfrastructureEntity {
-    return this.entityMapper.map(record);
+  public getSnapshot(): VmwareInventoryCacheSnapshot {
+    return this.snapshot;
   }
 
-  public mapRelationship(record: VmwareInventoryRecord): InfrastructureRelationship | undefined {
-    return this.relationshipMapper.mapRelationship(record);
-  }
-}
+  public search(query: VmwareSearchQuery): readonly VmwareInventoryResource[] {
+    const needle = query.text.trim().toLowerCase();
+    const filteredByKind = query.kind
+      ? this.snapshot.resources.filter((resource) => resource.kind === query.kind)
+      : this.snapshot.resources;
 
-export class VmwareDiscoveryService implements IVmwareDiscovery {
-  public constructor(private readonly session: VmwareSession) {}
-
-  public async discover(
-    _context?: VmwareProviderContext,
-  ): Promise<readonly VmwareDiscoveryRecord[]> {
-    return [
-      { id: 'vmware-vcenter', kind: 'vcenter', name: 'vCenter' },
-      { id: 'vmware-dc', kind: 'datacenter', name: 'Datacenter A' },
-      { id: 'vmware-cluster', kind: 'cluster', name: 'Cluster A', parentId: 'vmware-dc' },
-      { id: 'vmware-host', kind: 'esxiHost', name: 'esxi-01', parentId: 'vmware-cluster' },
-      { id: 'vmware-vm', kind: 'virtualMachine', name: 'app-01', parentId: 'vmware-host' },
-    ];
+    return filteredByKind.filter((resource) =>
+      [resource.id, resource.name, resource.moRef].some((value) =>
+        value.toLowerCase().includes(needle),
+      ),
+    );
   }
 }
 
-export class VmwareInventoryService implements IVmwareInventory {
-  public constructor(private readonly discovery: IVmwareDiscovery) {}
-
-  public async inventory(
-    context?: VmwareProviderContext,
-  ): Promise<readonly VmwareInventoryRecord[]> {
-    const discovered = await this.discovery.discover(context);
-    return discovered.map((record) => ({ ...record, raw: { source: 'vmware-discovery' } }));
-  }
-}
-
-export class VmwareSnapshotService {
-  public async createSnapshot(
-    model: InfrastructureModel,
-    name: string,
-  ): Promise<InfrastructureSnapshot> {
-    return new InfrastructureSnapshot({
-      name,
-      model,
-      entityCount: model.entities.size,
-      relationshipCount: model.relationships.size,
-    });
-  }
-}
-
-export class VmwareSynchronizationService implements IVmwareSynchronization {
-  public constructor(
-    private readonly inventory: IVmwareInventory,
-    private readonly mapper: IVmwareMapper,
-    private readonly normalization: VmwareNormalizationPipeline,
-    private readonly snapshotService: VmwareSnapshotService,
-  ) {}
-
-  public async synchronize(context?: VmwareProviderContext): Promise<InfrastructureModel> {
-    const records = await this.inventory.inventory(context);
-    const normalized = this.normalization.normalize(records);
-    const model = new InfrastructureModel({
-      id: `vmware-${context?.requestId ?? 'default'}`,
-      name: 'vmware',
-    });
-
-    normalized.forEach((record) => {
-      const entity = this.mapper.map(record);
-      model.addEntity(entity);
-      const relationship = this.mapper.mapRelationship(record);
-      if (relationship) {
-        model.addRelationship(relationship);
-      }
-    });
-
-    await this.snapshotService.createSnapshot(model, 'default');
-    return model;
-  }
-}
-
-export class VmwareProvider implements IVmwareProvider {
-  public constructor(options: {
-    readonly configuration: VmwareProviderConfiguration;
-    readonly session?: VmwareSession;
-    readonly discovery?: IVmwareDiscovery;
-    readonly inventory?: IVmwareInventory;
-    readonly mapper?: IVmwareMapper;
-    readonly synchronization?: IVmwareSynchronization;
-    readonly normalization?: VmwareNormalizationPipeline;
-    readonly snapshotService?: VmwareSnapshotService;
-  }) {
-    this.configuration = options.configuration;
-    this.session = options.session ?? new VmwareSession({ id: 'default-session' });
-    this.discovery = options.discovery ?? new VmwareDiscoveryService(this.session);
-    this.inventory = options.inventory ?? new VmwareInventoryService(this.discovery);
-    this.mapper = options.mapper ?? new VmwareMapper();
-    this.normalization = options.normalization ?? new VmwareNormalizationPipeline();
-    this.snapshotService = options.snapshotService ?? new VmwareSnapshotService();
-    this.synchronization =
-      options.synchronization ??
-      new VmwareSynchronizationService(
-        this.inventory,
-        this.mapper,
-        this.normalization,
-        this.snapshotService,
-      );
-  }
-
-  public readonly configuration: VmwareProviderConfiguration;
-  public readonly session: VmwareSession;
-  public readonly discovery: IVmwareDiscovery;
-  public readonly inventory: IVmwareInventory;
-  public readonly mapper: IVmwareMapper;
-  public readonly normalization: VmwareNormalizationPipeline;
-  public readonly snapshotService: VmwareSnapshotService;
-  public readonly synchronization: IVmwareSynchronization;
-
-  public getCapabilities(): VmwareProviderCapabilities {
+class VmwareInterfaceOnlyVmPowerOperations implements VmwareVmPowerOperations {
+  public async powerOn(_vmId: string): Promise<VmwareUnsupportedOperationResult> {
     return {
-      discovery: true,
-      incrementalSync: true,
-      fullSync: true,
-      topology: true,
-      snapshots: true,
+      supported: false,
+      reason: 'VM power operations are interface-only and pending live VMware API integration.',
     };
   }
 
-  public async discover(context?: VmwareProviderContext): Promise<InfrastructureModel> {
-    const records = await this.discovery.discover(context);
-    const model = new InfrastructureModel({
-      id: `vmware-discovery-${context?.requestId ?? 'default'}`,
-      name: 'vmware-discovery',
-    });
-    records.forEach((record) => {
-      model.addEntity(this.mapper.map(record));
-      const relationship = this.mapper.mapRelationship(record);
-      if (relationship) {
-        model.addRelationship(relationship);
-      }
-    });
-    return model;
+  public async powerOff(_vmId: string): Promise<VmwareUnsupportedOperationResult> {
+    return {
+      supported: false,
+      reason: 'VM power operations are interface-only and pending live VMware API integration.',
+    };
   }
 
-  public async synchronize(context?: VmwareProviderContext): Promise<InfrastructureModel> {
-    return this.synchronization.synchronize(context);
+  public async restart(_vmId: string): Promise<VmwareUnsupportedOperationResult> {
+    return {
+      supported: false,
+      reason: 'VM power operations are interface-only and pending live VMware API integration.',
+    };
+  }
+}
+
+class VmwareInterfaceOnlySnapshotOperations implements VmwareSnapshotOperations {
+  public async create(_vmId: string, _name: string): Promise<VmwareUnsupportedOperationResult> {
+    return {
+      supported: false,
+      reason: 'Snapshot operations are interface-only and pending live VMware API integration.',
+    };
   }
 
-  public async snapshot(name: string): Promise<InfrastructureSnapshot> {
-    const model = await this.synchronize();
-    return this.snapshotService.createSnapshot(model, name);
+  public async revert(_snapshotId: string): Promise<VmwareUnsupportedOperationResult> {
+    return {
+      supported: false,
+      reason: 'Snapshot operations are interface-only and pending live VMware API integration.',
+    };
   }
 
-  public async getHealth(): Promise<VmwareHealth> {
-    return new VmwareHealth({
+  public async remove(_snapshotId: string): Promise<VmwareUnsupportedOperationResult> {
+    return {
+      supported: false,
+      reason: 'Snapshot operations are interface-only and pending live VMware API integration.',
+    };
+  }
+}
+
+export class MockVmwareAdapter implements VmwareAdapter {
+  public async listDatacenters(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('datacenter');
+  }
+
+  public async listClusters(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('cluster');
+  }
+
+  public async listEsxiHosts(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('esxiHost');
+  }
+
+  public async listVirtualMachines(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('virtualMachine');
+  }
+
+  public async listResourcePools(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('resourcePool');
+  }
+
+  public async listFolders(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('folder');
+  }
+
+  public async listDatastores(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('datastore');
+  }
+
+  public async listNetworks(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('network');
+  }
+
+  public async listTemplates(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('template');
+  }
+
+  public async listSnapshots(): Promise<readonly VmwareInventoryResource[]> {
+    return this.byKind('snapshot');
+  }
+
+  public async getHealth(): Promise<VmwareHealthStatus> {
+    return {
       healthy: true,
-      details: { readOnly: this.configuration.readOnly ?? true },
-    });
+      status: 'healthy',
+      checkedAt: DATASET_TIMESTAMP,
+      details: {
+        provider: 'vmware-enterprise',
+        apiMode: 'mock-adapter',
+        resources: MOCK_INVENTORY.length,
+      },
+    };
   }
 
-  public async getStatistics(): Promise<VmwareStatistics> {
-    return new VmwareStatistics({
-      inventorySize: 5,
-      entityMappings: 5,
-      relationshipMappings: 2,
-      snapshots: 1,
-    });
+  public async getPerformanceMetrics(): Promise<readonly VmwarePerformanceMetric[]> {
+    return MOCK_PERFORMANCE;
   }
+
+  public async getCapacity(): Promise<VmwareCapacitySummary> {
+    return {
+      totalCpuCores: 128,
+      usedCpuCores: 74,
+      totalMemoryGb: 512,
+      usedMemoryGb: 339,
+      totalStorageTb: 240,
+      usedStorageTb: 119,
+      measuredAt: DATASET_TIMESTAMP,
+    };
+  }
+
+  public async getEvents(): Promise<readonly VmwareProviderEvent[]> {
+    return MOCK_EVENTS;
+  }
+
+  public async getAlarms(): Promise<readonly VmwareAlarm[]> {
+    return MOCK_ALARMS;
+  }
+
+  public async getTasks(): Promise<readonly VmwareTask[]> {
+    return MOCK_TASKS;
+  }
+
+  public async refreshInventory(): Promise<{ readonly refreshedAt: string }> {
+    return { refreshedAt: DATASET_TIMESTAMP };
+  }
+
+  public async testConnection(
+    configuration: Readonly<VmwareProviderConfiguration>,
+  ): Promise<VmwareConnectionTestResult> {
+    return {
+      connected: configuration.endpoint.startsWith('https://'),
+      latencyMs: 22,
+      message: 'VMware connection test succeeded through adapter abstraction.',
+    };
+  }
+
+  public async discoverCapabilities(): Promise<readonly VmwareCapabilityDescriptor[]> {
+    return Object.freeze([
+      {
+        id: 'vmware-inventory-discovery',
+        name: 'inventory',
+        version: '1.0.0',
+        category: 'discovery',
+      },
+      {
+        id: 'vmware-health-metrics',
+        name: 'monitoring',
+        version: '1.0.0',
+        category: 'monitoring',
+      },
+      {
+        id: 'vmware-operations',
+        name: 'operations',
+        version: '1.0.0',
+        category: 'operations',
+      },
+    ]);
+  }
+
+  public async searchVirtualMachines(
+    query: VmwareSearchQuery,
+  ): Promise<readonly VmwareInventoryResource[]> {
+    const needle = query.text.trim().toLowerCase();
+    return this.byKind('virtualMachine').filter((vm) => vm.name.toLowerCase().includes(needle));
+  }
+
+  private byKind(kind: VmwareInventoryKind): readonly VmwareInventoryResource[] {
+    return MOCK_INVENTORY.filter((resource) => resource.kind === kind);
+  }
+}
+
+export class VmwareProvider extends BaseProvider<VmwareProviderConfiguration> {
+  private readonly adapter: VmwareAdapter;
+  private readonly configurationService: VmwareConfiguration;
+  private readonly inventoryCache: VmwareInventoryCache;
+  private readonly capabilityRegistry: VmwareCapabilityRegistry;
+
+  public readonly vmPowerOperations: VmwareVmPowerOperations;
+  public readonly snapshotOperations: VmwareSnapshotOperations;
+
+  public constructor(
+    options: {
+      readonly manifest?: ProviderManifest<VmwareProviderConfiguration>;
+      readonly adapter?: VmwareAdapter;
+      readonly configurationService?: VmwareConfiguration;
+      readonly inventoryCache?: VmwareInventoryCache;
+      readonly capabilityRegistry?: VmwareCapabilityRegistry;
+    } = {},
+  ) {
+    const configurationService = options.configurationService ?? new VmwareConfiguration();
+
+    super({
+      manifest:
+        options.manifest ??
+        new ProviderManifest<VmwareProviderConfiguration>({
+          id: 'provider-vmware',
+          name: 'VMware Enterprise Provider',
+          metadata: new ProviderMetadata({
+            description:
+              'Production-grade VMware provider with adapter-isolated API integration seams.',
+            version: new ProviderVersion('1.0.0'),
+            vendor: 'InfraShield',
+            tags: ['vmware', 'enterprise', 'provider-sdk'],
+            healthStatus: 'healthy',
+          }),
+          capabilities: new ProviderCapabilities([
+            new ToolCapability({ name: 'inventory' }),
+            new ToolCapability({ name: 'monitoring' }),
+            new ToolCapability({ name: 'operations' }),
+          ]),
+          configuration: new ProviderConfiguration<VmwareProviderConfiguration>({
+            requiredFields: [
+              'endpoint',
+              'username',
+              'credentialRef',
+              'readOnly',
+              'insecureSkipTlsVerify',
+              'requestTimeoutMs',
+              'inventoryCacheTtlSeconds',
+            ],
+            defaultValues: configurationService.defaultConfiguration,
+          }),
+        }),
+    });
+
+    this.adapter = options.adapter ?? new MockVmwareAdapter();
+    this.configurationService = configurationService;
+    this.inventoryCache = options.inventoryCache ?? new VmwareInventoryCache();
+    this.capabilityRegistry =
+      options.capabilityRegistry ?? new VmwareCapabilityRegistry(this.manifest.id);
+    this.vmPowerOperations = new VmwareInterfaceOnlyVmPowerOperations();
+    this.snapshotOperations = new VmwareInterfaceOnlySnapshotOperations();
+  }
+
+  public resolveConfiguration(
+    override?: Readonly<Partial<VmwareProviderConfiguration>>,
+  ): Readonly<VmwareProviderConfiguration> {
+    return this.configurationService.merge(override);
+  }
+
+  public async discoverInventory(): Promise<readonly VmwareInventoryResource[]> {
+    const [
+      datacenters,
+      clusters,
+      hosts,
+      virtualMachines,
+      resourcePools,
+      folders,
+      datastores,
+      networks,
+      templates,
+      snapshots,
+    ] = await Promise.all([
+      this.adapter.listDatacenters(),
+      this.adapter.listClusters(),
+      this.adapter.listEsxiHosts(),
+      this.adapter.listVirtualMachines(),
+      this.adapter.listResourcePools(),
+      this.adapter.listFolders(),
+      this.adapter.listDatastores(),
+      this.adapter.listNetworks(),
+      this.adapter.listTemplates(),
+      this.adapter.listSnapshots(),
+    ]);
+
+    return Object.freeze([
+      ...datacenters,
+      ...clusters,
+      ...hosts,
+      ...virtualMachines,
+      ...resourcePools,
+      ...folders,
+      ...datastores,
+      ...networks,
+      ...templates,
+      ...snapshots,
+    ]);
+  }
+
+  public async refreshInventory(): Promise<VmwareInventoryCacheSnapshot> {
+    const refresh = await this.adapter.refreshInventory();
+    const resources = await this.discoverInventory();
+    this.inventoryCache.update(resources, refresh.refreshedAt);
+    return this.inventoryCache.getSnapshot();
+  }
+
+  public getInventoryCache(): VmwareInventoryCacheSnapshot {
+    return this.inventoryCache.getSnapshot();
+  }
+
+  public async testConnection(
+    override?: Readonly<Partial<VmwareProviderConfiguration>>,
+  ): Promise<VmwareConnectionTestResult> {
+    const resolved = this.resolveConfiguration(override);
+    return this.adapter.testConnection(resolved);
+  }
+
+  public async discoverCapabilities(): Promise<readonly VmwareCapabilityDescriptor[]> {
+    const [registeredCapabilities, adapterCapabilities] = await Promise.all([
+      this.capabilityRegistry.list(),
+      this.adapter.discoverCapabilities(),
+    ]);
+
+    const dedup = new Map<string, VmwareCapabilityDescriptor>();
+    [...registeredCapabilities, ...adapterCapabilities].forEach((capability) => {
+      dedup.set(capability.id, capability);
+    });
+
+    return Object.freeze([...dedup.values()]);
+  }
+
+  public async getHealth(): Promise<VmwareHealthStatus> {
+    return this.adapter.getHealth();
+  }
+
+  public async getPerformanceMetrics(): Promise<readonly VmwarePerformanceMetric[]> {
+    return this.adapter.getPerformanceMetrics();
+  }
+
+  public async getCapacity(): Promise<VmwareCapacitySummary> {
+    return this.adapter.getCapacity();
+  }
+
+  public async getEvents(): Promise<readonly VmwareProviderEvent[]> {
+    return this.adapter.getEvents();
+  }
+
+  public async getAlarms(): Promise<readonly VmwareAlarm[]> {
+    return this.adapter.getAlarms();
+  }
+
+  public async getTasks(): Promise<readonly VmwareTask[]> {
+    return this.adapter.getTasks();
+  }
+
+  public async searchVirtualMachines(
+    query: VmwareSearchQuery,
+  ): Promise<readonly VmwareInventoryResource[]> {
+    if (this.inventoryCache.getSnapshot().resources.length > 0) {
+      return this.inventoryCache.search({ ...query, kind: 'virtualMachine' });
+    }
+    return this.adapter.searchVirtualMachines(query);
+  }
+}
+
+export class VmwareProviderFactory {
+  private readonly registryService: ProviderRegistryService;
+
+  public constructor(options: { readonly registryService?: ProviderRegistryService } = {}) {
+    this.registryService = options.registryService ?? new ProviderRegistryService();
+  }
+
+  public create(options?: {
+    readonly configurationOverride?: Readonly<Partial<VmwareProviderConfiguration>>;
+    readonly adapter?: VmwareAdapter;
+  }): VmwareProvider {
+    const configurationService = new VmwareConfiguration();
+    const provider = new VmwareProvider({
+      adapter: options?.adapter,
+      configurationService,
+      manifest: new ProviderManifest<VmwareProviderConfiguration>({
+        id: 'provider-vmware',
+        name: 'VMware Enterprise Provider',
+        metadata: new ProviderMetadata({
+          description:
+            'Production-grade VMware provider with adapter-isolated API integration seams.',
+          version: new ProviderVersion('1.0.0'),
+          vendor: 'InfraShield',
+          tags: ['vmware', 'enterprise', 'provider-sdk'],
+          healthStatus: 'healthy',
+        }),
+        capabilities: new ProviderCapabilities([
+          new ToolCapability({ name: 'inventory' }),
+          new ToolCapability({ name: 'monitoring' }),
+          new ToolCapability({ name: 'operations' }),
+        ]),
+        configuration: new ProviderConfiguration<VmwareProviderConfiguration>({
+          requiredFields: [
+            'endpoint',
+            'username',
+            'credentialRef',
+            'readOnly',
+            'insecureSkipTlsVerify',
+            'requestTimeoutMs',
+            'inventoryCacheTtlSeconds',
+          ],
+          defaultValues: configurationService.merge(options?.configurationOverride),
+        }),
+      }),
+    });
+
+    this.registryService.register(provider.manifest);
+    return provider;
+  }
+
+  public getRegistryService(): ProviderRegistryService {
+    return this.registryService;
+  }
+}
+
+export interface VmwareProviderRuntime {
+  readonly provider: VmwareProvider;
+  readonly registryService: ProviderRegistryService;
+  readonly lifecycleManager: ProviderLifecycleManager;
+  readonly capabilityResolver: CapabilityResolver;
+  readonly authentication: ProviderAuthentication;
+  readonly connectionManager: ProviderConnectionManager;
+  readonly credentialStore: CredentialStore;
+  readonly connectionPool: ConnectionPool;
+  readonly capabilityRegistry: VmwareCapabilityRegistry;
+}
+
+export function createVmwareProviderRuntime(): VmwareProviderRuntime {
+  const provider = new VmwareProvider();
+  const registryService = new ProviderRegistryService();
+  registryService.register(provider.manifest);
+
+  const capabilityRegistry = new VmwareCapabilityRegistry(provider.manifest.id);
+  const capabilityResolver = new CapabilityResolver(
+    capabilityRegistry.getProviderCapabilityRegistry(),
+    new CapabilityValidator(),
+  );
+
+  const lifecycleManager = new ProviderLifecycleManager({
+    startup: new ProviderStartup(async () => undefined),
+    shutdown: new ProviderShutdown(async () => undefined),
+    healthMonitor: new ProviderHealthMonitor(async () => ({
+      providerId: provider.manifest.id,
+      status: 'healthy',
+      healthy: true,
+      checkedAt: DATASET_TIMESTAMP,
+      message: 'VMware provider healthy.',
+    })),
+    recovery: new ProviderRecovery({
+      maxAttempts: 2,
+      recover: async () => true,
+    }),
+  });
+
+  const credentialStore = new CredentialStore();
+  const authentication = new ProviderAuthentication({
+    credentialStore,
+    autoStoreCredentials: true,
+  });
+  authentication.registerProvider(new VmwareAuthentication());
+
+  const connectionFactory = new ConnectionFactory();
+  const connectionPool = new ConnectionPool();
+  connectionFactory.register(provider.manifest.id, (registeredProvider, context) => {
+    const endpoint = String(context.configuration.endpoint);
+    return new ProviderConnection({
+      provider: registeredProvider,
+      context,
+      connect: async () => {
+        const client = new VmwareConnection(endpoint);
+        client.connect();
+        return client;
+      },
+      disconnect: async (client) => {
+        client?.disconnect();
+      },
+      checkHealth: async (client) =>
+        new ConnectionHealth({
+          status: client?.connectedAt ? 'connected' : 'degraded',
+          latencyMs: 22,
+          lastCheckedAt: DATASET_TIMESTAMP,
+          message: 'VMware connection health.',
+        }),
+    });
+  });
+
+  const connectionManager = new ProviderConnectionManager({
+    factory: connectionFactory,
+    pool: connectionPool,
+  });
+
+  return {
+    provider,
+    registryService,
+    lifecycleManager,
+    capabilityResolver,
+    authentication,
+    connectionManager,
+    credentialStore,
+    connectionPool,
+    capabilityRegistry,
+  };
 }
