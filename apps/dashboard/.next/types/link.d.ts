@@ -30,9 +30,7 @@ declare namespace __next_route_internal_types__ {
   type StaticRoutes =
     | `/`
     | `/agents`
-    | `/infrastructure`
     | `/ai-providers`
-    | `/governance`
     | `/api/agents`
     | `/api/agents/cancel`
     | `/api/agents/plan`
@@ -46,11 +44,11 @@ declare namespace __next_route_internal_types__ {
     | `/api/configuration/widgets`
     | `/api/console`
     | `/api/dashboard`
+    | `/api/dashboard/ai-platform`
     | `/api/dashboard/infrastructure-summary`
     | `/api/dashboard/platform-health`
     | `/api/dashboard/runtime`
     | `/api/dashboard/security`
-    | `/api/dashboard/ai-platform`
     | `/api/infrastructure/databases`
     | `/api/infrastructure/openshift`
     | `/api/infrastructure/overview`
@@ -58,25 +56,27 @@ declare namespace __next_route_internal_types__ {
     | `/api/infrastructure/virtualization`
     | `/api/plugins`
     | `/api/plugins/disable`
-    | `/api/plugins/install`
     | `/api/plugins/enable`
+    | `/api/plugins/install`
     | `/api/workflow`
-    | `/api/workflow/history`
     | `/api/workflow/approve`
-    | `/api/workflow/retry`
     | `/api/workflow/plan`
+    | `/api/workflow/retry`
+    | `/api/workflow/history`
     | `/api/workflow/run`
     | `/api/workflows`
     | `/api/workflows/cancel`
     | `/api/workflows/retry`
     | `/api/workflows/run`
+    | `/governance`
+    | `/infrastructure`
     | `/knowledge-graph`
+    | `/observability`
     | `/openshift`
     | `/security`
-    | `/vmware`
     | `/settings`
-    | `/workflows`
-    | `/observability`;
+    | `/vmware`
+    | `/workflows`;
   type DynamicRoutes<T extends string = string> =
     | `/api/agents/${SafeSlug<T>}`
     | `/api/agents/status/${SafeSlug<T>}`
