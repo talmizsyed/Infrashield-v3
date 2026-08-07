@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { StructuredLogger, createMemoryLogSink } from '@infrashield/core-infrastructure';
 import { CapabilityVersion } from '@infrashield/providers';
 import {
   createOpenShiftProviderRuntime,
+  type IOpenShiftSdk,
+  OpenShiftLiveAdapter,
+  OpenShiftSdkAdapter,
+  OpenShiftSessionManager,
   OpenShiftAuthenticationProvider,
   OpenShiftCapabilityRegistry,
   OpenShiftConfiguration,
@@ -71,8 +76,8 @@ describe('openshift enterprise provider framework', () => {
       endpoint: 'https://api.openshift.enterprise.local:6443',
     });
 
-    expect(refreshed.resources.length).toBe(22);
-    expect(provider.getInventoryCache().resources.length).toBe(22);
+    expect(refreshed.resources.length).toBe(23);
+    expect(provider.getInventoryCache().resources.length).toBe(23);
     expect(search.length).toBeGreaterThan(0);
     expect(capabilities.some((capability) => capability.category === 'operations')).toBe(true);
     expect(connection.connected).toBe(true);
@@ -143,5 +148,154 @@ describe('openshift enterprise provider framework', () => {
     expect(authProvider.getProviderAuthentication()).toBeDefined();
     expect(connectionManager.getSdkConnectionManager()).toBeDefined();
     expect(capabilities.length).toBe(7);
+  });
+
+  it('uses OpenShiftLiveAdapter by default without changing the provider contract', async () => {
+    const provider = new OpenShiftProvider();
+    const inventory = await provider.discoverInventory();
+
+    expect(inventory).toHaveLength(23);
+    expect(inventory.some((resource) => resource.kind === 'cluster')).toBe(true);
+  });
+
+  it('supports live adapter services through an injected sdk abstraction', async () => {
+    const sdk: IOpenShiftSdk = {
+      discoverClusters: async () => [
+        {
+          id: 'cluster:test:cluster:test',
+          kind: 'cluster',
+          name: 'test',
+          cluster: 'test',
+          labels: Object.freeze({ source: 'sdk' }),
+          metadata: Object.freeze({ endpoint: 'https://test' }),
+        },
+      ],
+      discoverProjects: async () => [],
+      discoverNamespaces: async () => [],
+      listNodes: async () => [],
+      listPods: async () => [],
+      listDeployments: async () => [],
+      listStatefulSets: async () => [],
+      listDaemonSets: async () => [],
+      listReplicaSets: async () => [],
+      listJobs: async () => [],
+      listCronJobs: async () => [],
+      listServices: async () => [],
+      listRoutes: async () => [],
+      listIngresses: async () => [],
+      listOperators: async () => [],
+      listImageStreams: async () => [],
+      listConfigMaps: async () => [],
+      listPersistentVolumes: async () => [],
+      listPersistentVolumeClaims: async () => [],
+      listStorageClasses: async () => [],
+      listOperatorLifecycleManagers: async () => [],
+      listSecretMetadata: async () => [],
+      getClusterHealth: async () => ({
+        healthy: true,
+        status: 'healthy',
+        checkedAt: '2026-01-01T00:00:00.000Z',
+        details: Object.freeze({ mode: 'sdk' }),
+      }),
+      getMetrics: async () => [],
+      getEvents: async () => [],
+      getLogMetadata: async () => [],
+      getAlertMetadata: async () => [],
+      testConnection: async () => ({ connected: true, latencyMs: 5, message: 'ok' }),
+      disconnect: async () => undefined,
+    };
+    const adapter = new OpenShiftLiveAdapter({ sdk });
+
+    const inventory = await adapter.searchResources({ text: 'test' });
+    const health = await adapter.getClusterHealth();
+
+    expect(inventory).toHaveLength(1);
+    expect(health.healthy).toBe(true);
+  });
+
+  it('reuses shared connection management for live session reuse', async () => {
+    const sessionManager = new OpenShiftSessionManager();
+
+    const first = await sessionManager.getConnection();
+    const second = await sessionManager.getConnection();
+    await sessionManager.refreshConnection();
+    const refreshed = await sessionManager.getConnection();
+
+    expect(first.client.authorizationHeader ?? first.client.kubeconfig).toBeDefined();
+    expect(second.id).toBe(first.id);
+    expect(refreshed.id).toBe(first.id);
+  });
+
+  it('emits warning logs for transient live sdk retries', async () => {
+    const sink = createMemoryLogSink();
+    const logger = new StructuredLogger({
+      loggerId: 'openshift-live-test' as never,
+      sink,
+      minLevel: 'debug',
+    });
+    let attempts = 0;
+    const adapter = new OpenShiftSdkAdapter({
+      logger,
+      clientBundleFactory: () => ({
+        core: {
+          listNamespace: async () => ({ body: { items: [] } }),
+          listNode: async () => {
+            attempts += 1;
+            if (attempts === 1) {
+              throw new Error('temporary timeout');
+            }
+            return {
+              body: {
+                items: [
+                  {
+                    metadata: { name: 'worker-01', labels: { role: 'worker' } },
+                    status: { conditions: [{ type: 'Ready', status: 'True' }] },
+                  },
+                ],
+              },
+            };
+          },
+          listPodForAllNamespaces: async () => ({
+            body: {
+              items: [
+                {
+                  metadata: { name: 'pod-1', namespace: 'payments', labels: { app: 'payments' } },
+                  status: { phase: 'Running' },
+                },
+              ],
+            },
+          }),
+          listServiceForAllNamespaces: async () => ({ body: { items: [] } }),
+          listPersistentVolume: async () => ({ body: { items: [] } }),
+          listPersistentVolumeClaimForAllNamespaces: async () => ({ body: { items: [] } }),
+          listConfigMapForAllNamespaces: async () => ({ body: { items: [] } }),
+          listSecretForAllNamespaces: async () => ({ body: { items: [] } }),
+        },
+        apps: {
+          listDeploymentForAllNamespaces: async () => ({ body: { items: [] } }),
+          listStatefulSetForAllNamespaces: async () => ({ body: { items: [] } }),
+          listDaemonSetForAllNamespaces: async () => ({ body: { items: [] } }),
+          listReplicaSetForAllNamespaces: async () => ({ body: { items: [] } }),
+        },
+        batch: {
+          listJobForAllNamespaces: async () => ({ body: { items: [] } }),
+          listCronJobForAllNamespaces: async () => ({ body: { items: [] } }),
+        },
+        networking: {
+          listIngressForAllNamespaces: async () => ({ body: { items: [] } }),
+        },
+        storage: {
+          listStorageClass: async () => ({ body: { items: [] } }),
+        },
+        custom: {
+          listClusterCustomObject: async () => ({ body: { items: [] } }),
+        },
+      }),
+    });
+
+    const nodes = await adapter.listNodes();
+
+    expect(nodes).toHaveLength(1);
+    expect(sink.records.some((record) => record.level === 'warn')).toBe(true);
   });
 });

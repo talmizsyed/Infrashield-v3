@@ -11,7 +11,9 @@
   "types": "dist/index.d.ts",
   "dependencies": {
     "@infrashield/ai-tools": "workspace:*",
+    "@infrashield/connection-management": "workspace:*",
     "@infrashield/contracts": "workspace:*",
+    "@infrashield/core-infrastructure": "workspace:*",
     "@infrashield/providers": "workspace:*"
   }
 }

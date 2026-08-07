@@ -1,5 +1,6 @@
 import type { SerializableValueObject } from '@infrashield/contracts';
 import { ToolCapability } from '@infrashield/ai-tools';
+import { OpenShiftLiveAdapter } from './openshift-live';
 import {
   AuthenticationResult,
   BaseProvider,
@@ -959,7 +960,9 @@ export class OpenShiftProvider extends BaseProvider<OpenShiftProviderConfigurati
         }),
     });
 
-    this.adapter = options.adapter ?? new OpenShiftMockAdapter();
+    this.adapter =
+      options.adapter ??
+      new OpenShiftLiveAdapter({ configuration: configurationService.defaultConfiguration });
     this.configurationService = configurationService;
     this.inventoryCache = options.inventoryCache ?? new OpenShiftInventoryCache();
     this.capabilityRegistry =
@@ -1123,7 +1126,11 @@ export class OpenShiftProviderFactory {
     const configurationService = new OpenShiftConfiguration();
 
     const provider = new OpenShiftProvider({
-      adapter: options?.adapter,
+      adapter:
+        options?.adapter ??
+        new OpenShiftLiveAdapter({
+          configuration: configurationService.merge(options?.configurationOverride),
+        }),
       configurationService,
       manifest: new ProviderManifest<OpenShiftProviderConfiguration>({
         id: 'provider-openshift',
@@ -1213,3 +1220,15 @@ export function createOpenShiftProviderRuntime(): OpenShiftProviderRuntime {
     connectionManager: new OpenShiftConnectionManager(provider.manifest.id),
   };
 }
+
+export {
+  IOpenShiftSdk,
+  OpenShiftDiscoveryService,
+  OpenShiftEventService,
+  OpenShiftHealthService,
+  OpenShiftInventoryService,
+  OpenShiftLiveAdapter,
+  OpenShiftMetricsService,
+  OpenShiftSdkAdapter,
+  OpenShiftSessionManager,
+} from './openshift-live';
