@@ -64,6 +64,7 @@ describe('openshift enterprise provider framework', () => {
     const provider = new OpenShiftProvider({ inventoryCache: cache });
 
     const refreshed = await provider.refreshInventory();
+    provider.synchronizeCache(refreshed);
     const search = await provider.searchResources({ text: 'payments' });
     const capabilities = await provider.discoverCapabilities();
     const connection = await provider.testConnection({

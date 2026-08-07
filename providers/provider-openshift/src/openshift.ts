@@ -1058,6 +1058,10 @@ export class OpenShiftProvider extends BaseProvider<OpenShiftProviderConfigurati
     return this.inventoryCache.getSnapshot();
   }
 
+  public synchronizeCache(snapshot: OpenShiftInventoryCacheSnapshot): void {
+    this.inventoryCache.update(snapshot.resources, snapshot.refreshedAt ?? DATASET_TIMESTAMP);
+  }
+
   public async testConnection(
     override?: Readonly<Partial<OpenShiftProviderConfiguration>>,
   ): Promise<OpenShiftConnectionTestResult> {
