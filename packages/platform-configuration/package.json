@@ -10,8 +10,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
+    "@infrashield/agent-runtime": "workspace:*",
+    "@infrashield/ai-core": "workspace:*",
     "@infrashield/ai-tools": "workspace:*",
     "@infrashield/contracts": "workspace:*",
-    "@infrashield/providers": "workspace:*"
+    "@infrashield/providers": "workspace:*",
+    "@infrashield/workflow-engine": "workspace:*"
   }
 }

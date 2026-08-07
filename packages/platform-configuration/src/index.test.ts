@@ -3,12 +3,17 @@ import {
   AdminNavigation,
   AdminPermissions,
   AdminRegistry,
+  AIModelManagementConsole,
   createDefaultPlatformConfiguration,
   DashboardBuilder,
+  AgentManagementConsole,
   createPlatformConfigurationService,
   InMemoryConfigurationRepository,
   PlatformConfigurationService,
+  PlatformSettingsConsole,
   ProviderManagementConsole,
+  ToolManagementConsole,
+  WorkflowManagementConsole,
   WidgetManagementService,
   validatePlatformConfiguration,
 } from './index';
@@ -431,5 +436,271 @@ describe('platform configuration', () => {
 
     expect(consoleService.deleteProvider('acme-llm')).toBe(true);
     expect(consoleService.getProvider('acme-llm')).toBeUndefined();
+  });
+
+  it('supports tool registration, enable-disable, metadata, permissions, categories, and configuration', () => {
+    const consoleService = new ToolManagementConsole({
+      configurationService: createPlatformConfigurationService(),
+    });
+
+    const registered = consoleService.registerTool({
+      id: 'incident-evidence-tool',
+      name: 'Incident Evidence',
+      description: 'Collects evidence for incident reviews.',
+      enabled: true,
+      category: 'Security',
+      categories: ['Security', 'Utility'],
+      metadata: {
+        version: '1.0.0',
+        vendor: 'Infrashield',
+        description: 'Evidence collection tool.',
+        tags: ['incident', 'evidence'],
+        capabilities: ['collection', 'audit'],
+      },
+      permissions: {
+        requiredPermissions: ['tools.read', 'tools.execute'],
+        scopes: ['read', 'execute'],
+      },
+      configuration: { retentionDays: 30 },
+    });
+
+    expect(registered.id).toBe('incident-evidence-tool');
+    expect(consoleService.listCategories()).toEqual(
+      expect.arrayContaining(['Security', 'Utility']),
+    );
+
+    const configured = consoleService.configureTool('incident-evidence-tool', {
+      retentionDays: 60,
+      exportFormat: 'json',
+    });
+    expect(configured.configuration.retentionDays).toBe(60);
+    expect(configured.configuration.exportFormat).toBe('json');
+
+    const permissionsView = consoleService.getPermissionsView('incident-evidence-tool');
+    expect(permissionsView.permissions.requiredPermissions).toContain('tools.execute');
+
+    const disabled = consoleService.disableTool('incident-evidence-tool');
+    expect(disabled.enabled).toBe(false);
+    const enabled = consoleService.enableTool('incident-evidence-tool');
+    expect(enabled.enabled).toBe(true);
+
+    const connection = consoleService.testConnection('incident-evidence-tool');
+    expect(connection.success).toBe(true);
+
+    expect(consoleService.deleteTool('incident-evidence-tool')).toBe(true);
+  });
+
+  it('supports agent creation, tool and provider assignment, enable-disable, and runtime status', () => {
+    const consoleService = new AgentManagementConsole({
+      configurationService: createPlatformConfigurationService(),
+    });
+
+    const created = consoleService.createAgent({
+      id: 'incident-agent',
+      name: 'Incident Agent',
+      description: 'Handles incident response flows.',
+      type: 'OperationsAgent',
+      enabled: true,
+      tools: ['incident-summary-tool'],
+      providers: ['openai'],
+      policy: {
+        executionLimit: 5,
+        timeoutMs: 45_000,
+        approvalRequired: true,
+      },
+      runtime: {
+        status: 'registered',
+        mode: 'scheduled',
+      },
+      configuration: { owner: 'sre-team' },
+    });
+
+    expect(created.id).toBe('incident-agent');
+    expect(consoleService.assignTools('incident-agent', ['policy-lint-tool']).tools).toContain(
+      'policy-lint-tool',
+    );
+    expect(consoleService.assignProviders('incident-agent', ['anthropic']).providers).toContain(
+      'anthropic',
+    );
+    expect(consoleService.getRuntimeStatus('incident-agent')).toBe('registered');
+
+    const heartbeat = consoleService.simulateHeartbeat('incident-agent');
+    expect(heartbeat.runtime.lastHeartbeatAt).toBeDefined();
+
+    expect(consoleService.disableAgent('incident-agent').enabled).toBe(false);
+    expect(consoleService.enableAgent('incident-agent').enabled).toBe(true);
+    expect(consoleService.deleteAgent('incident-agent')).toBe(true);
+  });
+
+  it('supports workflow CRUD, agent assignment, execution policies, schedule metadata, and status', () => {
+    const consoleService = new WorkflowManagementConsole({
+      configurationService: createPlatformConfigurationService(),
+    });
+
+    const created = consoleService.createWorkflow({
+      id: 'incident-automation',
+      name: 'Incident Automation',
+      description: 'Automates incident workflow execution.',
+      enabled: true,
+      agents: ['operations-agent'],
+      executionPolicy: {
+        kind: 'approval',
+        metadata: { tier: 'gold' },
+        dependsOn: [],
+        timeoutMs: 1_800_000,
+        approvalRequired: true,
+      },
+      schedule: {
+        enabled: true,
+        cron: '0 * * * *',
+        timezone: 'UTC',
+      },
+      status: 'registered',
+      configuration: { maxRetries: 2 },
+    });
+
+    expect(created.id).toBe('incident-automation');
+    expect(
+      consoleService.assignAgents('incident-automation', ['operations-agent', 'security-agent'])
+        .agents,
+    ).toContain('security-agent');
+
+    const policy = consoleService.configureExecutionPolicy('incident-automation', {
+      kind: 'retry',
+      retryCount: 3,
+      timeoutMs: 2_400_000,
+      metadata: { tier: 'gold', change: 'retry-mode' },
+    });
+    expect(policy.executionPolicy.kind).toBe('retry');
+    expect(
+      consoleService.configureSchedule('incident-automation', { enabled: false }).schedule.enabled,
+    ).toBe(false);
+    expect(consoleService.getStatus('incident-automation')).toBe('registered');
+    expect(consoleService.getExecutionPolicySnapshot('incident-automation').kind).toBe('retry');
+    expect(consoleService.deleteWorkflow('incident-automation')).toBe(true);
+  });
+
+  it('supports AI model management, routing, defaults, guardrails, prompt templates, and mock connectivity', () => {
+    const consoleService = new AIModelManagementConsole({
+      configurationService: createPlatformConfigurationService(),
+    });
+
+    const registered = consoleService.registerModel({
+      id: 'gemini-2-5-pro',
+      providerId: 'gemini',
+      family: 'general',
+      name: 'Gemini 2.5 Pro',
+      version: '2025-06-01',
+      enabled: true,
+      isDefault: false,
+      capabilities: ['chat', 'reasoning', 'structured-output'],
+      routingPolicy: {
+        strategy: 'priority',
+        fallbackModelIds: ['openai-gpt-4-1'],
+        preferDefault: true,
+      },
+      costLimits: {
+        maxTokensPerRequest: 12000,
+        maxCostPerMonth: 300,
+        currency: 'USD',
+      },
+      guardrails: [
+        {
+          id: 'safe-output',
+          name: 'Safe Output',
+          enabled: true,
+          rules: ['output.audit'],
+        },
+      ],
+      promptTemplates: [
+        {
+          id: 'incident-summary',
+          name: 'Incident Summary',
+          enabled: true,
+          template: 'Summarize the incident.',
+          variables: ['incidentId'],
+        },
+      ],
+      connectivity: {
+        status: 'unknown',
+        message: 'Pending validation.',
+      },
+      metadata: { tier: 'enterprise' },
+    });
+
+    expect(registered.providerId).toBe('gemini');
+    expect(
+      consoleService.configureRoutingPolicy('gemini-2-5-pro', { strategy: 'fallback' })
+        .routingPolicy.strategy,
+    ).toBe('fallback');
+    expect(
+      consoleService.configureCostLimits('gemini-2-5-pro', { maxCostPerMonth: 250 }).costLimits
+        .maxCostPerMonth,
+    ).toBe(250);
+    expect(
+      consoleService.configureGuardrails('gemini-2-5-pro', registered.guardrails).guardrails,
+    ).toHaveLength(1);
+    expect(
+      consoleService.configurePromptTemplates('gemini-2-5-pro', registered.promptTemplates)
+        .promptTemplates,
+    ).toHaveLength(1);
+    expect(consoleService.setDefaultModel('gemini-2-5-pro').isDefault).toBe(true);
+    expect(consoleService.mockConnectivity('gemini-2-5-pro').success).toBe(true);
+    expect(consoleService.disableModel('gemini-2-5-pro').enabled).toBe(false);
+    expect(consoleService.enableModel('gemini-2-5-pro').enabled).toBe(true);
+    expect(
+      consoleService
+        .listModels({ providerId: 'gemini', enabled: true })
+        .some((model) => model.id === 'gemini-2-5-pro'),
+    ).toBe(true);
+    expect(consoleService.deleteModel('gemini-2-5-pro')).toBe(true);
+  });
+
+  it('supports branding, theme, navigation, feature flags, global configuration, and system settings', () => {
+    const consoleService = new PlatformSettingsConsole({
+      configurationService: createPlatformConfigurationService(),
+    });
+
+    const branding = consoleService.updateBranding({
+      productName: 'Infrashield Ops',
+      applicationName: 'Admin Console',
+      supportUrl: 'https://support.example.invalid',
+    });
+    expect(branding.branding.productName).toBe('Infrashield Ops');
+
+    const theme = consoleService.setTheme('custom', {
+      accentColor: '#123456',
+      customCss: '.app { color: #123456; }',
+    });
+    expect(theme.activeTheme).toBe('custom');
+
+    const updatedNavigation = consoleService.updateNavigation([
+      {
+        id: 'admin',
+        title: 'Administration',
+        href: '/admin',
+        description: 'Admin surface',
+        enabled: true,
+        order: 1,
+      },
+    ]);
+    expect(updatedNavigation.navigation).toHaveLength(1);
+
+    const flags = consoleService.updateFeatureFlags([
+      { id: 'admin-console', enabled: true, description: 'Enable admin console.' },
+    ]);
+    expect(flags.featureFlags[0]?.id).toBe('admin-console');
+
+    const globalConfiguration = consoleService.updateGlobalConfiguration({
+      environment: 'production',
+      cluster: 'primary',
+    });
+    expect(globalConfiguration.globalConfiguration.cluster).toBe('primary');
+
+    const systemSettings = consoleService.updateSystemSettings({
+      timezone: 'America/New_York',
+      maintenanceMode: true,
+    });
+    expect(systemSettings.systemSettings.maintenanceMode).toBe(true);
   });
 });

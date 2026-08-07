@@ -221,7 +221,26 @@ importers:
         specifier: ^11.0.0
         version: 11.3.0
 
-  packages/platform-configuration: {}
+  packages/platform-configuration:
+    dependencies:
+      '@infrashield/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
+      '@infrashield/ai-core':
+        specifier: workspace:*
+        version: link:../ai-core
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@infrashield/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@infrashield/workflow-engine':
+        specifier: workspace:*
+        version: link:../workflow-engine
 
   packages/plugin-framework: {}
 
