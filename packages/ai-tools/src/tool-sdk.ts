@@ -13,10 +13,11 @@ import {
   ToolRegistry,
   ToolRegistryException,
   ToolResult,
-  ToolContext,
   ToolValidationError,
   ToolValidator,
 } from './tool-registry.js';
+import type { ToolAuditContext, ToolGovernanceContext } from './tool-governance.js';
+import { ToolExecutionPolicy, ToolScope } from './tool-governance.js';
 
 export class ToolCapability {
   public readonly name: string;
@@ -34,9 +35,12 @@ export class ToolCapability {
 
 export interface ToolExecutionContext<
   TConfiguration extends SerializableValueObject = SerializableValueObject,
-> extends ToolContext {
+> extends ToolGovernanceContext {
   readonly configuration?: Readonly<Partial<TConfiguration>>;
   readonly requestTimestamp?: TimestampString;
+  readonly authorization?: import('./tool-governance.js').ToolAuthorization;
+  readonly executionPolicy?: ToolExecutionPolicy;
+  readonly audit?: ToolAuditContext;
 }
 
 export class ToolRequest<
@@ -210,10 +214,37 @@ export abstract class BaseTool<
       metadata: this.metadata,
       validator: this.validator,
       executor: new ToolExecutor<TInput, TOutput>(async (input, context) => {
+        const executionContext = context as ToolExecutionContext<TConfiguration>;
+        const audit = executionContext.executionPolicy
+          ? await executionContext.executionPolicy.enforce(
+              { id: this.id, name: this.name, metadata: this.metadata },
+              executionContext,
+            )
+          : executionContext.authorization
+            ? await executionContext.authorization.authorize(
+                { id: this.id, name: this.name, metadata: this.metadata },
+                executionContext,
+                executionContext.scopes ?? [ToolScope.Execute],
+              )
+            : (executionContext.audit ?? {
+                actorId: executionContext.actorId,
+                roles: Object.freeze((executionContext.roles ?? []).map((role) => role.name)),
+                requestedScopes: Object.freeze([
+                  ...(executionContext.scopes ?? [ToolScope.Execute]),
+                ]),
+                decision: 'allow' as const,
+                reason: 'No authorization configured.',
+                evaluatedAt: new Date().toISOString(),
+                metadata: executionContext.metadata,
+              });
+
         const request = new ToolRequest<TInput, TConfiguration>({
           toolId: this.id,
           input,
-          context: context as ToolExecutionContext<TConfiguration>,
+          context: {
+            ...executionContext,
+            audit,
+          },
         });
 
         try {

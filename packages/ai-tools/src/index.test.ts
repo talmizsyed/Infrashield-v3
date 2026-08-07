@@ -2,18 +2,24 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BaseTool,
+  ToolAuthorization,
   ToolCategory,
   ToolCapability,
   ToolBuilder,
   ToolConfiguration,
   ToolDefinition,
   ToolExecutor,
+  ToolExecutionPolicy,
   ToolFactory,
   ToolLifecycle,
   ToolMetadata,
+  ToolPermission,
+  ToolPolicy,
   ToolRegistry,
   ToolRequest,
+  ToolRole,
   ToolResponse,
+  ToolScope,
   ToolValidationError,
   ToolValidator,
 } from './index.js';
@@ -319,5 +325,132 @@ describe('Tool SDK', () => {
 
     expect(response.status).toBe('timed-out');
     expect(response.error).toContain('timed out');
+  });
+
+  it('enforces role-based access with permission inheritance and audit metadata', async () => {
+    const registry = new ToolRegistry();
+    const factory = new ToolFactory(registry);
+    let observedAudit:
+      | {
+          readonly actorId?: string;
+          readonly roles: readonly string[];
+          readonly requestedScopes: readonly ToolScope[];
+          readonly decision: 'allow' | 'deny';
+        }
+      | undefined;
+
+    const readerRole = new ToolRole({
+      name: 'reader',
+      permissions: [
+        new ToolPermission({
+          category: ToolCategory.Workflow,
+          scopes: [ToolScope.Execute],
+          effect: 'allow',
+        }),
+      ],
+    });
+    const operatorRole = new ToolRole({
+      name: 'operator',
+      inheritedRoles: [readerRole],
+    });
+
+    const tool = new ToolBuilder<{ workflowId: string }, { ok: boolean }, { tenant: string }>(
+      'governed-tool',
+      'Governed Workflow Tool',
+    )
+      .withDescription('Requires workflow execution permission.')
+      .withVersion('1.0.0')
+      .withCategories([ToolCategory.Workflow])
+      .withLifecycle(
+        new ToolLifecycle<{ workflowId: string }, { ok: boolean }, { tenant: string }>({
+          beforeExecute: (request) => {
+            observedAudit = request.context.audit;
+          },
+        }),
+      )
+      .withHandler(() => ({ ok: true }))
+      .build();
+
+    await factory.register(tool);
+
+    const result = await registry.execute<{ workflowId: string }, { ok: boolean }>(
+      'governed-tool',
+      { workflowId: 'wf-123' },
+      {
+        actorId: 'alice',
+        roles: [operatorRole],
+        executionPolicy: new ToolExecutionPolicy({
+          requiredScopes: [ToolScope.Execute],
+          authorization: new ToolAuthorization(),
+        }),
+        configuration: { tenant: 'prod' },
+      },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(observedAudit).toEqual(
+      expect.objectContaining({
+        actorId: 'alice',
+        roles: ['operator'],
+        requestedScopes: [ToolScope.Execute],
+        decision: 'allow',
+      }),
+    );
+  });
+
+  it('applies allow and deny rules through execution policies', async () => {
+    const registry = new ToolRegistry();
+    const factory = new ToolFactory(registry);
+
+    const role = new ToolRole({
+      name: 'workflow-admin',
+      permissions: [
+        new ToolPermission({
+          category: ToolCategory.Workflow,
+          scopes: [ToolScope.Execute, ToolScope.Admin],
+          effect: 'allow',
+        }),
+      ],
+    });
+
+    const tool = new ToolBuilder<{ workflowId: string }, { ok: boolean }, { tenant: string }>(
+      'denied-tool',
+      'Denied Workflow Tool',
+    )
+      .withDescription('Can be denied by policy.')
+      .withVersion('1.0.0')
+      .withCategories([ToolCategory.Workflow])
+      .withHandler(() => ({ ok: true }))
+      .build();
+
+    await factory.register(tool);
+
+    const policy = new ToolPolicy({
+      name: 'deny-specific-tool',
+      rules: [
+        new ToolPermission({
+          toolId: 'denied-tool',
+          scopes: [ToolScope.Execute],
+          effect: 'deny',
+        }),
+      ],
+    });
+
+    const result = await registry.execute<{ workflowId: string }, { ok: boolean }>(
+      'denied-tool',
+      { workflowId: 'wf-321' },
+      {
+        actorId: 'bob',
+        roles: [role],
+        executionPolicy: new ToolExecutionPolicy({
+          requiredScopes: [ToolScope.Execute],
+          authorization: new ToolAuthorization({ policy }),
+        }),
+        configuration: { tenant: 'prod' },
+      },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('Denied by deny-specific-tool policy');
   });
 });
