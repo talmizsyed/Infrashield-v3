@@ -23,6 +23,11 @@ import {
   ProviderCapabilities,
   ProviderConfiguration,
   ProviderFactory,
+  ProviderHealthMonitor,
+  ProviderLifecycleManager,
+  ProviderRecovery,
+  ProviderShutdown,
+  ProviderStartup,
   ProviderManifest,
   ProviderMetadata,
   ProviderRegistry,
@@ -505,5 +510,74 @@ describe('providers sdk core', () => {
         requiredFeatureFlags: ['stream'],
       }),
     ).toThrow('Capability feature flag is disabled: stream');
+  });
+
+  it('manages provider lifecycle transitions and emits lifecycle events', async () => {
+    const provider = new TestProvider();
+    const events: string[] = [];
+    const manager = new ProviderLifecycleManager({
+      startup: new ProviderStartup(async () => undefined),
+      shutdown: new ProviderShutdown(async () => undefined),
+    });
+
+    manager.on('initialized', () => events.push('initialized'));
+    manager.on('started', () => events.push('started'));
+    manager.on('suspended', () => events.push('suspended'));
+    manager.on('resumed', () => events.push('resumed'));
+    manager.on('stopped', () => events.push('stopped'));
+    manager.on('restarted', () => events.push('restarted'));
+
+    expect(manager.initialize(provider)).toBe('initialized');
+    expect(await manager.start(provider)).toBe('running');
+    expect(manager.suspend(provider.manifest.id)).toBe('suspended');
+    expect(manager.resume(provider.manifest.id)).toBe('running');
+    expect(await manager.restart(provider)).toBe('running');
+    expect(await manager.stop(provider)).toBe('stopped');
+    expect(manager.getState(provider.manifest.id)).toBe('stopped');
+
+    expect(events).toEqual([
+      'initialized',
+      'started',
+      'suspended',
+      'resumed',
+      'stopped',
+      'initialized',
+      'started',
+      'restarted',
+      'stopped',
+    ]);
+  });
+
+  it('monitors health and recovers failed providers', async () => {
+    const provider = new TestProvider();
+    let recoverAttempts = 0;
+    const manager = new ProviderLifecycleManager({
+      startup: new ProviderStartup(async () => undefined),
+      shutdown: new ProviderShutdown(async () => undefined),
+      healthMonitor: new ProviderHealthMonitor(async (currentProvider) => ({
+        providerId: currentProvider.manifest.id,
+        status: 'degraded',
+        healthy: false,
+        checkedAt: new Date().toISOString(),
+        message: 'latency high',
+      })),
+      recovery: new ProviderRecovery({
+        maxAttempts: 2,
+        recover: async () => {
+          recoverAttempts += 1;
+          return recoverAttempts >= 2;
+        },
+      }),
+    });
+
+    await manager.start(provider);
+    const health = await manager.monitorHealth(provider);
+    expect(health.healthy).toBe(false);
+    expect(manager.getState(provider.manifest.id)).toBe('failed');
+
+    const recovered = await manager.recover(provider, new Error('health degraded'));
+    expect(recovered.recovered).toBe(true);
+    expect(recovered.attempts).toBe(2);
+    expect(manager.getState(provider.manifest.id)).toBe('running');
   });
 });

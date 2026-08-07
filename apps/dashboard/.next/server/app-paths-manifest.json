@@ -1,7 +1,21 @@
 {
   "/api/configuration/route": "app/api/configuration/route.js",
   "/api/dashboard/route": "app/api/dashboard/route.js",
+  "/api/infrastructure/overview/route": "app/api/infrastructure/overview/route.js",
+  "/api/infrastructure/openshift/route": "app/api/infrastructure/openshift/route.js",
+  "/api/infrastructure/servers/route": "app/api/infrastructure/servers/route.js",
+  "/api/infrastructure/databases/route": "app/api/infrastructure/databases/route.js",
   "/page": "app/page.js",
+  "/agents/page": "app/agents/page.js",
+  "/infrastructure/page": "app/infrastructure/page.js",
+  "/openshift/page": "app/openshift/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/ai-providers/page": "app/ai-providers/page.js",
   "/knowledge-graph/page": "app/knowledge-graph/page.js",
-  "/agents/page": "app/agents/page.js"
+  "/workflows/page": "app/workflows/page.js",
+  "/vmware/page": "app/vmware/page.js",
+  "/security/page": "app/security/page.js",
+  "/observability/page": "app/observability/page.js",
+  "/governance/page": "app/governance/page.js",
+  "/settings/page": "app/settings/page.js"
 }
