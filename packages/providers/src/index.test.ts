@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   BaseProvider,
+  ConnectionFactory,
+  ConnectionHealth,
+  ConnectionPool,
+  ConnectionRetryPolicy,
+  ConnectionValidator,
+  ProviderConnection,
+  ProviderConnectionManager,
   ProviderCapabilities,
   ProviderConfiguration,
   ProviderFactory,
@@ -118,5 +125,107 @@ describe('providers sdk core', () => {
     await expect(provider.createContext({} as { region: string; apiKey: string })).rejects.toThrow(
       'Missing required configuration field: apiKey',
     );
+  });
+
+  it('creates pooled provider connections and reuses them', async () => {
+    const provider = new TestProvider();
+    const context = await provider.createContext({ apiKey: 'secret-key' });
+    const pool = new ConnectionPool();
+    const factory = new ConnectionFactory();
+    const manager = new ProviderConnectionManager({ pool, factory });
+
+    factory.register(provider.manifest.id, (registeredProvider, registeredContext) => {
+      return new ProviderConnection({
+        provider: registeredProvider,
+        context: registeredContext,
+        connect: async () => ({ clientId: 'client-1' }),
+        disconnect: async () => undefined,
+        checkHealth: async () =>
+          new ConnectionHealth({ status: 'healthy', latencyMs: 12, message: 'ok' }),
+      });
+    });
+
+    const first = await manager.connect(provider, context);
+    const second = await manager.connect(provider, context);
+
+    expect(first).toBe(second);
+    expect(first.status).toBe('connected');
+    expect(first.getMetrics().connectCount).toBe(1);
+    expect(manager.listConnections()).toHaveLength(1);
+  });
+
+  it('validates connections, checks health, reconnects, and disconnects gracefully', async () => {
+    const provider = new TestProvider();
+    const context = await provider.createContext({ apiKey: 'secret-key' });
+    const pool = new ConnectionPool();
+    const factory = new ConnectionFactory();
+    let connectAttempts = 0;
+
+    factory.register(provider.manifest.id, (registeredProvider, registeredContext) => {
+      return new ProviderConnection({
+        provider: registeredProvider,
+        context: registeredContext,
+        connect: async () => {
+          connectAttempts += 1;
+          return { clientId: `client-${connectAttempts}` };
+        },
+        disconnect: async () => undefined,
+        checkHealth: async () => new ConnectionHealth({ status: 'healthy', latencyMs: 8 }),
+      });
+    });
+
+    const manager = new ProviderConnectionManager({
+      pool,
+      factory,
+      validator: new ConnectionValidator((configuration) => {
+        if (!configuration.apiKey) {
+          throw new Error('Missing apiKey.');
+        }
+      }),
+    });
+
+    const connection = await manager.connect(provider, context);
+    const health = await manager.checkHealth(connection.id);
+    const reconnected = await manager.reconnect(connection.id);
+    const disconnected = await manager.disconnect(connection.id);
+
+    expect(health?.status).toBe('healthy');
+    expect(reconnected?.getMetrics().reconnectCount).toBe(1);
+    expect(disconnected).toBe(true);
+    expect(manager.listConnections()).toHaveLength(0);
+  });
+
+  it('retries failed connections and exposes connection metrics', async () => {
+    const provider = new TestProvider();
+    const context = await provider.createContext({ apiKey: 'secret-key' });
+    const factory = new ConnectionFactory();
+    let attempts = 0;
+
+    factory.register(provider.manifest.id, (registeredProvider, registeredContext) => {
+      return new ProviderConnection({
+        provider: registeredProvider,
+        context: registeredContext,
+        connect: async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw new Error('Temporary network failure');
+          }
+          return { clientId: 'client-retry' };
+        },
+        disconnect: async () => undefined,
+      });
+    });
+
+    const manager = new ProviderConnectionManager({
+      factory,
+      pool: new ConnectionPool(),
+      retryPolicy: new ConnectionRetryPolicy({ maxAttempts: 2, baseDelayMs: 1 }),
+    });
+
+    const connection = await manager.connect(provider, context);
+
+    expect(connection.status).toBe('connected');
+    expect(connection.getMetrics().failureCount).toBe(1);
+    expect(connection.getMetrics().connectCount).toBe(1);
   });
 });
