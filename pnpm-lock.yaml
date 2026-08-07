@@ -225,6 +225,15 @@ importers:
 
   packages/plugin-framework: {}
 
+  packages/providers:
+    dependencies:
+      '@infrashield/ai-tools':
+        specifier: workspace:*
+        version: link:../ai-tools
+      '@infrashield/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/runtime:
     dependencies:
       '@agentic/sdk':

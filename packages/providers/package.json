@@ -1,0 +1,16 @@
+{
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "name": "@infrashield/providers",
+  "dependencies": {
+    "@infrashield/ai-tools": "workspace:*",
+    "@infrashield/contracts": "workspace:*"
+  }
+}
