@@ -8,6 +8,7 @@ import {
   createPlatformConfigurationService,
   InMemoryConfigurationRepository,
   PlatformConfigurationService,
+  WidgetManagementService,
   validatePlatformConfiguration,
 } from './index';
 
@@ -214,6 +215,114 @@ describe('platform configuration', () => {
     expect(imported.templates.some((template) => template.id === 'template-exec')).toBe(true);
     expect(
       imported.dashboards.some((dashboard) => dashboard.metadata.id === 'exec-dashboard'),
+    ).toBe(true);
+  });
+
+  it('supports widget CRUD, configuration, enable-disable, layout metadata, thresholds, and roles', () => {
+    const widgets = new WidgetManagementService();
+
+    const added = widgets.addWidget({
+      id: 'cpu-hotspot',
+      title: 'CPU Hotspot',
+      category: 'observability',
+      description: 'CPU usage hotspot tracker.',
+      refreshIntervalSeconds: 30,
+      thresholds: { warning: 75, critical: 90 },
+      layout: {
+        minWidth: 2,
+        minHeight: 1,
+        maxWidth: 8,
+        maxHeight: 6,
+        resizable: true,
+      },
+      permissions: { requiredPermissions: ['widgets.read'] },
+      roles: ['platform-operator'],
+    });
+
+    expect(added.metadata.id).toBe('cpu-hotspot');
+    expect(added.configuration.refreshIntervalSeconds).toBe(30);
+
+    const configured = widgets.configureWidget('cpu-hotspot', {
+      refreshIntervalSeconds: 45,
+      thresholds: { warning: 70, critical: 95 },
+      layout: { maxWidth: 10 },
+    });
+    expect(configured.configuration.refreshIntervalSeconds).toBe(45);
+    expect(configured.configuration.thresholds.critical).toBe(95);
+    expect(configured.configuration.layout.maxWidth).toBe(10);
+
+    const disabled = widgets.disableWidget('cpu-hotspot');
+    expect(disabled.metadata.enabled).toBe(false);
+    const enabled = widgets.enableWidget('cpu-hotspot');
+    expect(enabled.metadata.enabled).toBe(true);
+
+    const assigned = widgets.assignRoles('cpu-hotspot', ['security-admin']);
+    expect(assigned.roles).toEqual(['security-admin']);
+
+    expect(widgets.removeWidget('cpu-hotspot')).toBe(true);
+    expect(widgets.getWidget('cpu-hotspot')).toBeUndefined();
+  });
+
+  it('supports widget templates and permission-aware registry ui visibility', () => {
+    const widgets = new WidgetManagementService();
+
+    widgets.addTemplate({
+      id: 'template-latency',
+      name: 'Latency Widget Template',
+      category: 'observability',
+      description: 'Template for latency telemetry.',
+      tags: ['latency', 'observability'],
+      widget: {
+        metadata: {
+          description: 'Latency card',
+          category: 'observability',
+          tags: ['template'],
+          enabled: true,
+        },
+        configuration: {
+          refreshIntervalSeconds: 20,
+          thresholds: { warning: 250, critical: 500 },
+          layout: {
+            minWidth: 2,
+            minHeight: 1,
+            maxWidth: 12,
+            maxHeight: 8,
+            resizable: true,
+          },
+        },
+        visibility: {
+          visibleForRoles: ['platform-operator'],
+          hiddenForRoles: [],
+        },
+        permissions: {
+          requiredPermissions: ['widgets.read'],
+        },
+        roles: ['platform-operator'],
+      },
+    });
+
+    const fromTemplate = widgets.addWidgetFromTemplate('template-latency', {
+      id: 'latency-map',
+      title: 'Latency Map',
+      order: 999,
+    });
+    expect(fromTemplate.configuration.thresholds.warning).toBe(250);
+
+    const denied = widgets.getRegistryUI({ roleIds: ['audit-reader'], permissions: [] });
+    expect(
+      denied.sections.some((section) =>
+        section.widgets.some((widget) => widget.metadata.id === 'latency-map'),
+      ),
+    ).toBe(false);
+
+    const allowed = widgets.getRegistryUI({
+      roleIds: ['platform-operator'],
+      permissions: ['widgets.read'],
+    });
+    expect(
+      allowed.sections.some((section) =>
+        section.widgets.some((widget) => widget.metadata.id === 'latency-map'),
+      ),
     ).toBe(true);
   });
 });

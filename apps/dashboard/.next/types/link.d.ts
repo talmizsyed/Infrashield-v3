@@ -29,59 +29,59 @@ declare namespace __next_route_internal_types__ {
 
   type StaticRoutes =
     | `/`
-    | `/agents`
-    | `/api/agents`
-    | `/api/agents/plan`
-    | `/api/agents/cancel`
-    | `/api/agents/run`
+    | `/ai-providers`
     | `/api/console`
+    | `/api/agents`
+    | `/api/agents/cancel`
+    | `/api/agents/plan`
+    | `/api/agents/run`
     | `/api/dashboard`
     | `/api/dashboard/infrastructure-summary`
     | `/api/dashboard/ai-platform`
     | `/api/dashboard/platform-health`
     | `/api/dashboard/runtime`
     | `/api/dashboard/security`
+    | `/api/infrastructure/openshift`
+    | `/api/infrastructure/databases`
+    | `/api/infrastructure/overview`
+    | `/api/infrastructure/servers`
+    | `/api/infrastructure/virtualization`
     | `/api/configuration`
     | `/api/configuration/dashboard`
     | `/api/configuration/navigation`
-    | `/api/configuration/providers`
     | `/api/configuration/features`
-    | `/api/configuration/themes`
+    | `/api/configuration/providers`
     | `/api/configuration/widgets`
-    | `/api/workflow`
-    | `/api/workflow/approve`
-    | `/api/workflow/history`
-    | `/api/workflow/plan`
-    | `/api/workflow/retry`
-    | `/api/workflow/run`
+    | `/api/configuration/themes`
     | `/api/plugins`
     | `/api/plugins/disable`
     | `/api/plugins/enable`
     | `/api/plugins/install`
-    | `/api/infrastructure/databases`
-    | `/api/infrastructure/openshift`
-    | `/api/infrastructure/overview`
-    | `/api/infrastructure/servers`
-    | `/api/infrastructure/virtualization`
+    | `/api/workflow`
+    | `/api/workflow/approve`
+    | `/api/workflow/plan`
+    | `/api/workflow/history`
+    | `/api/workflow/retry`
+    | `/api/workflow/run`
     | `/api/workflows`
-    | `/api/workflows/cancel`
     | `/api/workflows/retry`
+    | `/api/workflows/cancel`
     | `/api/workflows/run`
-    | `/ai-providers`
+    | `/agents`
     | `/governance`
     | `/knowledge-graph`
-    | `/infrastructure`
     | `/observability`
-    | `/openshift`
-    | `/settings`
+    | `/infrastructure`
     | `/security`
     | `/vmware`
-    | `/workflows`;
+    | `/settings`
+    | `/workflows`
+    | `/openshift`;
   type DynamicRoutes<T extends string = string> =
     | `/api/agents/${SafeSlug<T>}`
     | `/api/agents/status/${SafeSlug<T>}`
-    | `/api/workflow/${SafeSlug<T>}`
     | `/api/plugins/${SafeSlug<T>}`
+    | `/api/workflow/${SafeSlug<T>}`
     | `/api/workflows/${SafeSlug<T>}`
     | `/api/workflows/${SafeSlug<T>}/history`
     | `/api/workflows/${SafeSlug<T>}/status`;

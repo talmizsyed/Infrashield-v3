@@ -1,4 +1,6 @@
 {
   "/api/configuration/route": "app/api/configuration/route.js",
-  "/settings/page": "app/settings/page.js"
+  "/api/dashboard/route": "app/api/dashboard/route.js",
+  "/settings/page": "app/settings/page.js",
+  "/page": "app/page.js"
 }
