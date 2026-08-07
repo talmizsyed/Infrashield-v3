@@ -26,8 +26,13 @@ import {
   ProviderHealthMonitor,
   ProviderLifecycleManager,
   ProviderRecovery,
+  ProviderRegistryService,
   ProviderShutdown,
   ProviderStartup,
+  ProviderCatalog,
+  ProviderDependencyResolver,
+  ProviderInstaller,
+  ProviderVersionManager,
   ProviderManifest,
   ProviderMetadata,
   ProviderRegistry,
@@ -579,5 +584,121 @@ describe('providers sdk core', () => {
     expect(recovered.recovered).toBe(true);
     expect(recovered.attempts).toBe(2);
     expect(manager.getState(provider.manifest.id)).toBe('running');
+  });
+
+  it('registers providers in catalog, discovers by tags, and tracks health status', () => {
+    const service = new ProviderRegistryService();
+
+    const providerA = new ProviderManifest({
+      id: 'provider-a',
+      name: 'Provider A',
+      metadata: new ProviderMetadata({
+        description: 'Provider A description.',
+        version: new ProviderVersion('1.0.0'),
+        vendor: 'InfraShield',
+        tags: ['stable', 'core'],
+        healthStatus: 'healthy',
+      }),
+      capabilities: new ProviderCapabilities([new ToolCapability({ name: 'chat' })]),
+    });
+
+    const providerB = new ProviderManifest({
+      id: 'provider-b',
+      name: 'Provider B',
+      metadata: new ProviderMetadata({
+        description: 'Provider B description.',
+        version: new ProviderVersion('1.0.0'),
+        vendor: 'InfraShield',
+        tags: ['beta'],
+        healthStatus: 'degraded',
+      }),
+      capabilities: new ProviderCapabilities([new ToolCapability({ name: 'embeddings' })]),
+    });
+
+    service.register(providerA);
+    service.register(providerB);
+    service.enable(providerA.id);
+
+    expect(service.discover({ tags: ['stable'] })).toHaveLength(1);
+    expect(service.discover({ enabledOnly: true })).toHaveLength(1);
+    expect(service.getHealthStatus(providerA.id)).toBe('healthy');
+    expect(service.getHealthStatus(providerB.id)).toBe('degraded');
+  });
+
+  it('installs providers with dependencies and prevents unsafe uninstall', () => {
+    const registry = new ProviderRegistry();
+    const catalog = new ProviderCatalog();
+    const resolver = new ProviderDependencyResolver(catalog);
+    const installer = new ProviderInstaller(registry, catalog, resolver);
+    const service = new ProviderRegistryService({ registry, catalog, resolver, installer });
+
+    const baseManifest = new ProviderManifest({
+      id: 'provider-base',
+      name: 'Provider Base',
+      metadata: new ProviderMetadata({
+        description: 'Base provider.',
+        version: new ProviderVersion('1.0.0'),
+      }),
+      capabilities: new ProviderCapabilities([new ToolCapability({ name: 'chat' })]),
+    });
+
+    const dependentManifest = new ProviderManifest({
+      id: 'provider-dependent',
+      name: 'Provider Dependent',
+      metadata: new ProviderMetadata({
+        description: 'Dependent provider.',
+        version: new ProviderVersion('1.0.0'),
+      }),
+      capabilities: new ProviderCapabilities([new ToolCapability({ name: 'chat' })]),
+    });
+
+    service.register(baseManifest);
+    service.register(dependentManifest, [
+      {
+        providerId: baseManifest.id,
+        minVersion: '1.0.0',
+      },
+    ]);
+
+    const installed = service.install(dependentManifest.id);
+    expect(installed.map((manifest) => manifest.id)).toEqual([
+      baseManifest.id,
+      dependentManifest.id,
+    ]);
+
+    expect(() => service.uninstall(baseManifest.id)).toThrow(
+      `Provider ${baseManifest.id} cannot be uninstalled because dependents exist: ${dependentManifest.id}.`,
+    );
+  });
+
+  it('supports provider version upgrade and downgrade through version manager', () => {
+    const service = new ProviderRegistryService({ versions: new ProviderVersionManager() });
+
+    const manifest = new ProviderManifest({
+      id: 'provider-versioned',
+      name: 'Provider Versioned',
+      metadata: new ProviderMetadata({
+        description: 'Versioned provider.',
+        version: new ProviderVersion('1.0.0'),
+      }),
+      capabilities: new ProviderCapabilities([new ToolCapability({ name: 'chat' })]),
+    });
+
+    service.register(manifest);
+
+    const upgraded = service.upgrade(
+      manifest,
+      new ProviderMetadata({
+        description: manifest.metadata.description,
+        version: new ProviderVersion('2.0.0'),
+        vendor: manifest.metadata.vendor,
+        tags: manifest.metadata.tags,
+        healthStatus: manifest.metadata.healthStatus,
+      }),
+    );
+    expect(upgraded.metadata.version.toString()).toBe('2.0.0');
+
+    const downgraded = service.downgrade(upgraded, new ProviderVersion('1.1.0'));
+    expect(downgraded.metadata.version.toString()).toBe('1.1.0');
   });
 });
