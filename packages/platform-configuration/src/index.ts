@@ -1,4 +1,6 @@
+export * from './admin-framework';
 export * from './cache';
+export * from './dashboard-builder';
 export * from './default-configuration';
 export * from './registry';
 export * from './repository';
